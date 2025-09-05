@@ -380,7 +380,7 @@ def solve(problem_name: str):
 
     ok = client.guess(guess_map)
     print("Guess correct?", ok)
-    print()
+    print(flush=True)
 
 
 if __name__ == "__main__":
