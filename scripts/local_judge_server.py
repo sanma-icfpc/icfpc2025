@@ -11,11 +11,11 @@ Endpoints (JSON over HTTP POST):
   - /guess     : {"id": str, "map": {"rooms": [int], "startingRoom": int, "connections": [{"from":{"room":int,"door":int}, "to":{"room":int,"door":int}}]}}
                  -> {"correct": bool}
 
-Behavior mirrors the C++ LocalJudge in k3/vs/solver/src/solver.cpp:
+Behavior mirrors the C++ LocalJudge in k3/vs/solver/src/solver.cpp, with one usability tweak:
   - Problems: {probatio:3, primus:6, secundus:12, tertius:18, quartus:24, quintus:30}
   - explore(plan): returns labels AFTER each step (length == len(plan))
   - queryCount increases by len(plans) + 1 per /explore request (batching penalty)
-  - /guess resets selection regardless of correctness
+  - Note: unlike the official judge, this server does NOT reset the selected problem on /guess; the selection persists until another /select.
 
 Pure stdlib implementation for portability (Linux/macOS/Windows/WSL2).
 """
@@ -30,6 +30,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import argparse
 import datetime
+import webbrowser
 from typing import Dict, List, Optional, Tuple
 
 
@@ -175,6 +176,19 @@ HTTP_VERBOSE = False
 # RNG controls (default: fixed seed for reproducibility)
 RNG_FIXED_DEFAULT = True
 RNG_DEFAULT_SEED = 2025
+VISUALIZE = True
+VIZ_PORT_DEFAULT = 8002
+
+# Visualizer shared state
+VIS_LOG_BUFFER: List[str] = []
+VIS_EVENTS: List[Dict] = []
+VIS_NEXT_EVENT_ID = 1
+SSE_CLIENTS: List[Tuple[BaseHTTPRequestHandler, threading.Lock]] = []
+VIS_LOCK = threading.Lock()
+
+# Sessions: each begins at /select and aggregates subsequent explores/guesses until next /select
+SESSIONS: List[Dict] = []
+CURRENT_SESSION_ID: Optional[int] = None
 
 
 def now_ts() -> str:
@@ -183,7 +197,24 @@ def now_ts() -> str:
 
 def vlog(msg: str) -> None:
     if JUDGE_LOG:
-        sys.stderr.write(f"judge: {msg}\n")
+        line = f"judge: {msg}"
+        sys.stderr.write(line + "\n")
+        with VIS_LOCK:
+            VIS_LOG_BUFFER.append(line)
+            # limit buffer
+            if len(VIS_LOG_BUFFER) > 2000:
+                del VIS_LOG_BUFFER[:1000]
+            # broadcast to SSE clients
+            for handler, lock in list(SSE_CLIENTS):
+                try:
+                    with lock:
+                        handler.wfile.write(b"event: log\n")
+                        handler.wfile.write(b"data: ")
+                        handler.wfile.write(json.dumps({"line": line}).encode("utf-8"))
+                        handler.wfile.write(b"\n\n")
+                        handler.wfile.flush()
+                except Exception:
+                    SSE_CLIENTS.remove((handler, lock))
 
 
 def json_response(handler: BaseHTTPRequestHandler, code: int, payload: Dict) -> None:
@@ -243,6 +274,42 @@ def build_labyrinth_from_guess(map_obj: Dict) -> Labyrinth:
                 raise ValueError(f"door undefined: room={r} door={d}")
 
     return Labyrinth(labels=list(rooms), start=starting, to=to)
+
+
+def labyrinth_to_wire(L: Optional[Labyrinth], name: Optional[str], seed: Optional[int]) -> Dict:
+    if L is None:
+        return {"active": False}
+    return {
+        "active": True,
+        "problemName": name,
+        "seed": seed,
+        "rooms": L.labels,
+        "start": L.start,
+        "to": L.to,
+        "numRooms": len(L.labels),
+    }
+
+
+def add_event(ev: Dict) -> None:
+    global VIS_NEXT_EVENT_ID
+    with VIS_LOCK:
+        ev = dict(ev)
+        ev.setdefault("id", VIS_NEXT_EVENT_ID)
+        VIS_NEXT_EVENT_ID += 1
+        VIS_EVENTS.append(ev)
+        if len(VIS_EVENTS) > 1000:
+            del VIS_EVENTS[:500]
+        # broadcast SSE
+        for handler, lock in list(SSE_CLIENTS):
+            try:
+                with lock:
+                    handler.wfile.write(b"event: event\n")
+                    handler.wfile.write(b"data: ")
+                    handler.wfile.write(json.dumps(ev).encode("utf-8"))
+                    handler.wfile.write(b"\n\n")
+                    handler.wfile.flush()
+            except Exception:
+                SSE_CLIENTS.remove((handler, lock))
 
 
 # ==================== HTTP Handler ====================
@@ -336,6 +403,27 @@ class JudgeHandler(BaseHTTPRequestHandler):
             ts.query_count = 0
             ts.seed = used_seed
         vlog(f"select problem={pname} rooms={CATALOG[pname]} seed={used_seed} mode={mode}")
+        # Start a new session snapshot
+        global CURRENT_SESSION_ID
+        snap = {
+            "labels": ts.active.labels[:],
+            "start": ts.active.start,
+            "to": ts.active.to,
+        }
+        with VIS_LOCK:
+            sid = len(SESSIONS) + 1
+            CURRENT_SESSION_ID = sid
+            SESSIONS.append({
+                "id": sid,
+                "problemName": pname,
+                "rooms": CATALOG[pname],
+                "seed": used_seed,
+                "mode": mode,
+                "labyrinth": snap,
+                "explores": [],
+                "guesses": [],
+            })
+        add_event({"type": "select", "sessionId": sid, "problemName": pname, "rooms": CATALOG[pname], "seed": used_seed, "mode": mode})
         return json_response(self, 200, {"problemName": pname})
 
     def handle_explore(self, payload: Dict) -> None:
@@ -368,6 +456,11 @@ class JudgeHandler(BaseHTTPRequestHandler):
             plan_logs = ", ".join(f"{p}->{res}" for p, res in zip(plans, results))
             sys.stderr.write(f"[http {now_ts()}] explore details=[{plan_logs}]\n")
         vlog(f"explore plans={len(plans)} qc:{before}->{out['queryCount']}")
+        with VIS_LOCK:
+            sid = CURRENT_SESSION_ID
+            if sid is not None and 1 <= sid <= len(SESSIONS):
+                SESSIONS[sid-1]["explores"].append({"plans": plans, "results": results, "queryCount": out["queryCount"]})
+        add_event({"type": "explore", "sessionId": CURRENT_SESSION_ID, "plans": plans, "results": results, "queryCount": out["queryCount"]})
         return json_response(self, 200, out)
 
     def handle_guess(self, payload: Dict) -> None:
@@ -387,8 +480,43 @@ class JudgeHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 ok = False
                 vlog(f"guess error: {e}")
-            # Reset selection regardless of correctness
-            ts.reset_problem()
+            # Keep current selection for usability (no reset on guess)
+            # Build diff for visualization
+            diff = {}
+            try:
+                # labels diff
+                truth_labels = ts.active.labels
+                guess_labels = map_obj.get("rooms", []) if isinstance(map_obj, dict) else []
+                label_mismatch = [i for i, (a, b) in enumerate(zip(truth_labels, guess_labels)) if a != b]
+                # edges diff (compare undirected port pairs)
+                def edge_set_from_to(to_tbl):
+                    S = set()
+                    for r in range(len(to_tbl)):
+                        for d in range(6):
+                            r2, d2 = to_tbl[r][d]
+                            a = (r, d)
+                            b = (r2, d2)
+                            key = tuple(sorted([a, b]))
+                            S.add(key)
+                    return S
+
+                truth_edges = edge_set_from_to(ts.active.to)
+                # build to from guess
+                try:
+                    cand_full = build_labyrinth_from_guess(map_obj)
+                    guess_edges = edge_set_from_to(cand_full.to)
+                except Exception:
+                    guess_edges = set()
+                missing = sorted(list(truth_edges - guess_edges))
+                extra = sorted(list(guess_edges - truth_edges))
+                diff = {"labelMismatch": label_mismatch, "missingEdges": missing, "extraEdges": extra}
+            except Exception:
+                diff = {"error": "diff failed"}
+            with VIS_LOCK:
+                sid = CURRENT_SESSION_ID
+                if sid is not None and 1 <= sid <= len(SESSIONS):
+                    SESSIONS[sid-1]["guesses"].append({"correct": bool(ok), "diff": diff})
+            add_event({"type": "guess", "sessionId": CURRENT_SESSION_ID, "correct": bool(ok), "diff": diff})
         vlog(f"guess correct={ok}")
         return json_response(self, 200, {"correct": bool(ok)})
 
@@ -421,6 +549,8 @@ if __name__ == "__main__":
     rng_group.add_argument("--rng-fixed", action="store_true", help="Use fixed RNG seed by default (default)")
     rng_group.add_argument("--rng-random", action="store_true", help="Use true randomness by default")
     parser.add_argument("--seed", type=int, default=RNG_DEFAULT_SEED, help=f"Default seed when using fixed RNG (default: {RNG_DEFAULT_SEED})")
+    parser.add_argument("--no-visualize", action="store_true", help="Disable visualizer UI server")
+    parser.add_argument("--visualizer", type=int, default=VIZ_PORT_DEFAULT, metavar="PORT", help=f"Visualizer port (default: {VIZ_PORT_DEFAULT})")
     args = parser.parse_args()
 
     JUDGE_LOG = not bool(args.quiet)
@@ -430,6 +560,8 @@ if __name__ == "__main__":
     RNG_DEFAULT_SEED = int(args.seed)
     if args.rng_fixed:
         RNG_FIXED_DEFAULT = True
+
+    VISUALIZE = not bool(args.no_visualize)
 
     if args.client_test:
         target_host, target_port = parse_host_port(args.client_test)
@@ -488,4 +620,226 @@ if __name__ == "__main__":
         print("Client test completed.")
         sys.exit(0)
 
-    run(args.host, args.port)
+    # Start judge server
+    judge_thread = threading.Thread(target=run, args=(args.host, args.port), daemon=True)
+    judge_thread.start()
+
+    # Optionally start visualizer server
+    if VISUALIZE:
+        class VizHandler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if self.path == "/" or self.path == "/index.html":
+                    return self.serve_index_file()
+                if self.path == "/state":
+                    with TEAMS_LOCK:
+                        ts = TEAMS.get("_default")
+                        st = labyrinth_to_wire(ts.active if ts else None, ts.problem_name if ts else None, ts.seed if ts else None)
+                    return json_response(self, 200, st)
+                if self.path == "/sessions":
+                    with VIS_LOCK:
+                        summ = [
+                            {"id": s["id"], "problemName": s["problemName"], "rooms": s["rooms"], "seed": s["seed"], "mode": s["mode"],
+                             "explores": len(s["explores"]), "guesses": len(s["guesses"]) }
+                            for s in SESSIONS
+                        ]
+                    return json_response(self, 200, {"sessions": summ})
+                if self.path.startswith("/session"):
+                    from urllib.parse import urlparse, parse_qs
+                    q = parse_qs(urlparse(self.path).query)
+                    sid = int(q.get("id", [0])[0]) if q.get("id") else 0
+                    with VIS_LOCK:
+                        if 1 <= sid <= len(SESSIONS):
+                            s = SESSIONS[sid-1]
+                            detail = {
+                                "id": s["id"],
+                                "problemName": s["problemName"],
+                                "rooms": s["rooms"],
+                                "seed": s["seed"],
+                                "mode": s["mode"],
+                                "labyrinth": s["labyrinth"],
+                                "explores": s["explores"],
+                                "guesses": s["guesses"],
+                            }
+                        else:
+                            detail = {"error": "unknown session id"}
+                    return json_response(self, 200, detail)
+                if self.path == "/events":
+                    with VIS_LOCK:
+                        evs = list(VIS_EVENTS)
+                    return json_response(self, 200, {"events": evs, "logs": list(VIS_LOG_BUFFER[-200:])})
+                if self.path == "/stream":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "keep-alive")
+                    self.end_headers()
+                    lock = threading.Lock()
+                    with VIS_LOCK:
+                        SSE_CLIENTS.append((self, lock))
+                    try:
+                        while True:
+                            time.sleep(60)
+                    except Exception:
+                        pass
+                    finally:
+                        with VIS_LOCK:
+                            try:
+                                SSE_CLIENTS.remove((self, lock))
+                            except ValueError:
+                                pass
+                    return
+                return error(self, 404, "Not Found")
+
+            def log_message(self, fmt: str, *args) -> None:  # keep quiet
+                if HTTP_VERBOSE:
+                    sys.stderr.write("[viz] " + (fmt % args) + "\n")
+
+            def serve_index(self):
+                html = f"""
+<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\" />
+  <title>ICFPC 2025 Local Judge Visualizer</title>
+  <script src=\"https://cdn.jsdelivr.net/npm/d3@7\"></script>
+  <style>
+    body {{ font-family: system-ui, Arial, sans-serif; margin: 0; display: flex; height: 100vh; }}
+    #left {{ width: 70%; border-right: 1px solid #ddd; display: flex; flex-direction: column; }}
+    #right {{ width: 30%; display: flex; flex-direction: column; }}
+    header {{ padding: 8px 12px; background:#f6f6f6; border-bottom:1px solid #ddd; }}
+    #viz {{ flex: 1; }}
+    #logs {{ flex: 1; padding: 8px; background: #0b1020; color: #bfe2ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: auto; }}
+    #events {{ flex: 1; overflow: auto; padding: 8px; }}
+    .badge {{ display:inline-block; padding:2px 6px; border-radius: 10px; background:#eee; margin-left:6px; }}
+    .node {{ fill: #4e79a7; stroke: #fff; stroke-width: 1.5px; }}
+    .node.current {{ fill: #e15759; }}
+    .edge {{ stroke: #aaa; stroke-width: 1.2px; opacity: 0.8; }}
+    .edge.diff-missing {{ stroke: #d62728; stroke-width: 2.5px; }}
+    .edge.diff-extra {{ stroke: #2ca02c; stroke-width: 2.5px; }}
+  </style>
+</head>
+<body>
+  <div id="left">
+    <header>
+      <span id="pname">(no selection)</span>
+      <span class="badge" id="rooms"></span>
+    </header>
+    <svg id="viz"></svg>
+  </div>
+  <div id="right">
+    <div id="events"></div>
+    <pre id="logs"></pre>
+  </div>
+<script>
+let state = null;
+let events = [];
+const svg = d3.select('#viz');
+const logsEl = document.getElementById('logs');
+const eventsEl = document.getElementById('events');
+function appendLog(line){{ logsEl.textContent += line + "\\n"; logsEl.scrollTop = logsEl.scrollHeight; }}
+function layout(n){{
+  const w = document.getElementById('left').clientWidth; const h = document.getElementById('left').clientHeight - 50;
+  svg.attr('width', w).attr('height', h);
+  const R = Math.min(w,h)*0.38; const cx = w/2, cy = h/2;
+  const pts = [];
+  for(let i=0;i<n;i++){{ const ang = (i/n)*2*Math.PI; pts.push({{x: cx+R*Math.cos(ang), y: cy+R*Math.sin(ang)}}); }}
+  return {{w,h,pts}};
+}}
+function uniqueEdges(to){{
+  const S=new Set(); const E=[];
+  for(let r=0;r<to.length;r++) for(let d=0;d<6;d++){{
+    const [r2,d2]=to[r][d]; const a=`${{Math.min(r,r2)}}-${{Math.max(r,r2)}}`; if(S.has(a)) continue; S.add(a); E.push([r,r2]);
+  }} return E;
+}}
+function draw(){{ if(!state||!state.active){{ svg.selectAll('*').remove(); return; }}
+  const L = layout(state.numRooms); svg.selectAll('*').remove();
+  const edges = uniqueEdges(state.to);
+  svg.selectAll('line.edge').data(edges).enter().append('line').attr('class','edge')
+    .attr('x1',d=>L.pts[d[0]].x).attr('y1',d=>L.pts[d[0]].y)
+    .attr('x2',d=>L.pts[d[1]].x).attr('y2',d=>L.pts[d[1]].y);
+  svg.selectAll('circle.node').data(L.pts).enter().append('circle').attr('class','node')
+    .attr('r',12).attr('cx',d=>d.x).attr('cy',d=>d.y);
+  svg.selectAll('text.idx').data(L.pts.map((p,i)=>({{i,...p}}))).enter().append('text').attr('class','idx')
+    .attr('x',d=>d.x+14).attr('y',d=>d.y+4).text(d=>`${{d.i}} (${{state.rooms[d.i]}})`).style('font', '12px sans-serif');
+}}
+function refresh(){{
+  fetch('/state').then(r=>r.json()).then(s=>{{ state=s; document.getElementById('pname').textContent = s.active? s.problemName : '(no selection)'; document.getElementById('rooms').textContent = s.active? `${{s.numRooms}} rooms` : ''; draw(); }});
+  fetch('/events').then(r=>r.json()).then(e=>{{ events=e.events||[]; (e.logs||[]).forEach(appendLog); renderEvents(); }});
+}}
+function renderEvents(){{
+  eventsEl.innerHTML = '<h3>Events</h3>';
+  events.forEach(ev=>{{
+    const div = document.createElement('div'); div.style.borderBottom='1px solid #eee'; div.style.padding='6px';
+    if(ev.type==='explore'){{
+      div.textContent = `explore: plans=${{JSON.stringify(ev.plans)}} results=${{JSON.stringify(ev.results)}} qc=${{ev.queryCount}}`;
+      div.onclick = ()=> replayExplore(ev);
+    }} else if(ev.type==='guess'){{
+      div.textContent = `guess: correct=${{ev.correct}}`;
+      div.onclick = ()=> showGuessDiff(ev);
+    }} else if(ev.type==='select'){{
+      div.textContent = `select: ${{ev.problemName}} rooms=${{ev.rooms}} seed=${{ev.seed}} (${{ev.mode}})`;
+    }}
+    eventsEl.appendChild(div);
+  }});
+}}
+function replayExplore(ev){{ if(!state||!state.active) return; const L = layout(state.numRooms); draw();
+  let cur = state.start;
+  function step(planIdx, pos){{ if(planIdx>=ev.plans.length) return; const plan = ev.plans[planIdx]; if(pos>=plan.length){{ step(planIdx+1,0); return; }}
+    const d = plan.charCodeAt(pos)-48; const next = state.to[cur][d][0];
+    svg.append('line').attr('class','edge').attr('stroke','#ff8c00').attr('stroke-width',3)
+      .attr('x1',L.pts[cur].x).attr('y1',L.pts[cur].y).attr('x2',L.pts[next].x).attr('y2',L.pts[next].y);
+    cur = next; setTimeout(()=>step(planIdx,pos+1), 400);
+  }}
+  step(0,0);
+}}
+function showGuessDiff(ev){{ if(!state||!state.active) return; const L = layout(state.numRooms); draw();
+  const missing = ev.diff && ev.diff.missingEdges || [];
+  const extra = ev.diff && ev.diff.extraEdges || [];
+  function edgeXY(pair){{ const a=pair[0], b=pair[1]; return {{x1:L.pts[a[0]].x,y1:L.pts[a[0]].y,x2:L.pts[b[0]].x,y2:L.pts[b[0]].y}}; }}
+  missing.forEach(p=>{{ const e=edgeXY(p); svg.append('line').attr('class','edge diff-missing').attr('x1',e.x1).attr('y1',e.y1).attr('x2',e.x2).attr('y2',e.y2); }});
+  extra.forEach(p=>{{ const e=edgeXY(p); svg.append('line').attr('class','edge diff-extra').attr('x1',e.x1).attr('y1',e.y1).attr('x2',e.x2).attr('y2',e.y2); }});
+}}
+refresh();
+const es = new EventSource('/stream');
+es.addEventListener('log', ev=>{{ const d=JSON.parse(ev.data); appendLog(d.line); }});
+es.addEventListener('event', ev=>{{ const d=JSON.parse(ev.data); events.push(d); renderEvents(); if(d.type==='select'){{ refresh(); }}}});
+</script>
+</body></html>
+"""
+                data = html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def serve_index_file(self):
+                import os
+                here = os.path.dirname(os.path.abspath(__file__))
+                path = os.path.join(here, "local_judge_server.html")
+                try:
+                    with open(path, "rb") as f:
+                        data = f.read()
+                except Exception:
+                    # Fallback to inline template if the external file is missing
+                    return self.serve_index()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        viz_host = args.host
+        viz_port = int(args.visualizer)
+        viz_server = ThreadingHTTPServer((viz_host, viz_port), VizHandler)
+        print(f"Visualizer at http://{viz_host}:{viz_port}")
+        webbrowser.open(f"http://{viz_host}:{viz_port}")
+        try:
+            viz_server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            viz_server.server_close()
+    else:
+        # Block main thread on judge
+        judge_thread.join()
