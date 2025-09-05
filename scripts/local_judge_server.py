@@ -694,125 +694,6 @@ if __name__ == "__main__":
                 if HTTP_VERBOSE:
                     sys.stderr.write("[viz] " + (fmt % args) + "\n")
 
-            def serve_index(self):
-                html = f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset=\"utf-8\" />
-  <title>ICFPC 2025 Local Judge Visualizer</title>
-  <script src=\"https://cdn.jsdelivr.net/npm/d3@7\"></script>
-  <style>
-    body {{ font-family: system-ui, Arial, sans-serif; margin: 0; display: flex; height: 100vh; }}
-    #left {{ width: 70%; border-right: 1px solid #ddd; display: flex; flex-direction: column; }}
-    #right {{ width: 30%; display: flex; flex-direction: column; }}
-    header {{ padding: 8px 12px; background:#f6f6f6; border-bottom:1px solid #ddd; }}
-    #viz {{ flex: 1; }}
-    #logs {{ flex: 1; padding: 8px; background: #0b1020; color: #bfe2ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: auto; }}
-    #events {{ flex: 1; overflow: auto; padding: 8px; }}
-    .badge {{ display:inline-block; padding:2px 6px; border-radius: 10px; background:#eee; margin-left:6px; }}
-    .node {{ fill: #4e79a7; stroke: #fff; stroke-width: 1.5px; }}
-    .node.current {{ fill: #e15759; }}
-    .edge {{ stroke: #aaa; stroke-width: 1.2px; opacity: 0.8; }}
-    .edge.diff-missing {{ stroke: #d62728; stroke-width: 2.5px; }}
-    .edge.diff-extra {{ stroke: #2ca02c; stroke-width: 2.5px; }}
-  </style>
-</head>
-<body>
-  <div id="left">
-    <header>
-      <span id="pname">(no selection)</span>
-      <span class="badge" id="rooms"></span>
-    </header>
-    <svg id="viz"></svg>
-  </div>
-  <div id="right">
-    <div id="events"></div>
-    <pre id="logs"></pre>
-  </div>
-<script>
-let state = null;
-let events = [];
-const svg = d3.select('#viz');
-const logsEl = document.getElementById('logs');
-const eventsEl = document.getElementById('events');
-function appendLog(line){{ logsEl.textContent += line + "\\n"; logsEl.scrollTop = logsEl.scrollHeight; }}
-function layout(n){{
-  const w = document.getElementById('left').clientWidth; const h = document.getElementById('left').clientHeight - 50;
-  svg.attr('width', w).attr('height', h);
-  const R = Math.min(w,h)*0.38; const cx = w/2, cy = h/2;
-  const pts = [];
-  for(let i=0;i<n;i++){{ const ang = (i/n)*2*Math.PI; pts.push({{x: cx+R*Math.cos(ang), y: cy+R*Math.sin(ang)}}); }}
-  return {{w,h,pts}};
-}}
-function uniqueEdges(to){{
-  const S=new Set(); const E=[];
-  for(let r=0;r<to.length;r++) for(let d=0;d<6;d++){{
-    const [r2,d2]=to[r][d]; const a=`${{Math.min(r,r2)}}-${{Math.max(r,r2)}}`; if(S.has(a)) continue; S.add(a); E.push([r,r2]);
-  }} return E;
-}}
-function draw(){{ if(!state||!state.active){{ svg.selectAll('*').remove(); return; }}
-  const L = layout(state.numRooms); svg.selectAll('*').remove();
-  const edges = uniqueEdges(state.to);
-  svg.selectAll('line.edge').data(edges).enter().append('line').attr('class','edge')
-    .attr('x1',d=>L.pts[d[0]].x).attr('y1',d=>L.pts[d[0]].y)
-    .attr('x2',d=>L.pts[d[1]].x).attr('y2',d=>L.pts[d[1]].y);
-  svg.selectAll('circle.node').data(L.pts).enter().append('circle').attr('class','node')
-    .attr('r',12).attr('cx',d=>d.x).attr('cy',d=>d.y);
-  svg.selectAll('text.idx').data(L.pts.map((p,i)=>({{i,...p}}))).enter().append('text').attr('class','idx')
-    .attr('x',d=>d.x+14).attr('y',d=>d.y+4).text(d=>`${{d.i}} (${{state.rooms[d.i]}})`).style('font', '12px sans-serif');
-}}
-function refresh(){{
-  fetch('/state').then(r=>r.json()).then(s=>{{ state=s; document.getElementById('pname').textContent = s.active? s.problemName : '(no selection)'; document.getElementById('rooms').textContent = s.active? `${{s.numRooms}} rooms` : ''; draw(); }});
-  fetch('/events').then(r=>r.json()).then(e=>{{ events=e.events||[]; (e.logs||[]).forEach(appendLog); renderEvents(); }});
-}}
-function renderEvents(){{
-  eventsEl.innerHTML = '<h3>Events</h3>';
-  events.forEach(ev=>{{
-    const div = document.createElement('div'); div.style.borderBottom='1px solid #eee'; div.style.padding='6px';
-    if(ev.type==='explore'){{
-      div.textContent = `explore: plans=${{JSON.stringify(ev.plans)}} results=${{JSON.stringify(ev.results)}} qc=${{ev.queryCount}}`;
-      div.onclick = ()=> replayExplore(ev);
-    }} else if(ev.type==='guess'){{
-      div.textContent = `guess: correct=${{ev.correct}}`;
-      div.onclick = ()=> showGuessDiff(ev);
-    }} else if(ev.type==='select'){{
-      div.textContent = `select: ${{ev.problemName}} rooms=${{ev.rooms}} seed=${{ev.seed}} (${{ev.mode}})`;
-    }}
-    eventsEl.appendChild(div);
-  }});
-}}
-function replayExplore(ev){{ if(!state||!state.active) return; const L = layout(state.numRooms); draw();
-  let cur = state.start;
-  function step(planIdx, pos){{ if(planIdx>=ev.plans.length) return; const plan = ev.plans[planIdx]; if(pos>=plan.length){{ step(planIdx+1,0); return; }}
-    const d = plan.charCodeAt(pos)-48; const next = state.to[cur][d][0];
-    svg.append('line').attr('class','edge').attr('stroke','#ff8c00').attr('stroke-width',3)
-      .attr('x1',L.pts[cur].x).attr('y1',L.pts[cur].y).attr('x2',L.pts[next].x).attr('y2',L.pts[next].y);
-    cur = next; setTimeout(()=>step(planIdx,pos+1), 400);
-  }}
-  step(0,0);
-}}
-function showGuessDiff(ev){{ if(!state||!state.active) return; const L = layout(state.numRooms); draw();
-  const missing = ev.diff && ev.diff.missingEdges || [];
-  const extra = ev.diff && ev.diff.extraEdges || [];
-  function edgeXY(pair){{ const a=pair[0], b=pair[1]; return {{x1:L.pts[a[0]].x,y1:L.pts[a[0]].y,x2:L.pts[b[0]].x,y2:L.pts[b[0]].y}}; }}
-  missing.forEach(p=>{{ const e=edgeXY(p); svg.append('line').attr('class','edge diff-missing').attr('x1',e.x1).attr('y1',e.y1).attr('x2',e.x2).attr('y2',e.y2); }});
-  extra.forEach(p=>{{ const e=edgeXY(p); svg.append('line').attr('class','edge diff-extra').attr('x1',e.x1).attr('y1',e.y1).attr('x2',e.x2).attr('y2',e.y2); }});
-}}
-refresh();
-const es = new EventSource('/stream');
-es.addEventListener('log', ev=>{{ const d=JSON.parse(ev.data); appendLog(d.line); }});
-es.addEventListener('event', ev=>{{ const d=JSON.parse(ev.data); events.push(d); renderEvents(); if(d.type==='select'){{ refresh(); }}}});
-</script>
-</body></html>
-"""
-                data = html.encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
             def serve_index_file(self):
                 import os
                 here = os.path.dirname(os.path.abspath(__file__))
@@ -822,7 +703,7 @@ es.addEventListener('event', ev=>{{ const d=JSON.parse(ev.data); events.push(d);
                         data = f.read()
                 except Exception:
                     # Fallback to inline template if the external file is missing
-                    return self.serve_index()
+                    return error(self, 500, "HTML file not found")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
