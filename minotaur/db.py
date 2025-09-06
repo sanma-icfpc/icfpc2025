@@ -22,6 +22,41 @@ def get_conn(path: str) -> sqlite3.Connection:
     return conn
 
 
+class ConnProxy:
+    """Lightweight per-thread connection proxy.
+
+    Avoids sharing a single sqlite3.Connection across threads by delegating all
+    operations to a thread-local connection obtained via get_conn(path).
+    """
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+
+    def _conn(self) -> sqlite3.Connection:
+        return get_conn(self._path)
+
+    # Common operations used by the codebase
+    def execute(self, *args, **kwargs):
+        return self._conn().execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        return self._conn().executemany(*args, **kwargs)
+
+    def cursor(self):
+        return self._conn().cursor()
+
+    # Context manager passthrough (no-op under autocommit but keep parity)
+    def __enter__(self):
+        return self._conn().__enter__()
+
+    def __exit__(self, exc_type, exc, tb):
+        return self._conn().__exit__(exc_type, exc, tb)
+
+    # Generic attribute access passthrough
+    def __getattr__(self, name):
+        return getattr(self._conn(), name)
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     with conn:
         # Drop legacy tables if present; keep request logs across restarts

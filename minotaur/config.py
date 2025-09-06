@@ -53,6 +53,9 @@ class Settings:
     # Persisted settings YAML path
     settings_file: str
 
+    # WSGI/Waitress
+    waitress_threads: int
+
     @property
     def is_mock(self) -> bool:
         return self.mock or not self.official_base
@@ -76,6 +79,7 @@ def load_settings_from_env() -> Settings:
         # Default to package path users.yaml; resolve relative paths under package dir
         auth_file=resolve_under_base(os.getenv("AUTH_FILE") or "users.yaml"),
         settings_file=resolve_under_base(os.getenv("SETTINGS_FILE") or "settings.yaml"),
+        waitress_threads=int(os.getenv("WAITRESS_THREADS", "32")),
     )
 
 

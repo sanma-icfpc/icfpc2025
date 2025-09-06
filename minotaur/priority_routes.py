@@ -129,7 +129,11 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
     def ui_priorities_pin():
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
-        pin = bool(data.get("pinned"))
+        # Treat pinned as integer 0/1; avoid truthiness of strings like "0"
+        try:
+            pin = int(data.get("pinned") or 0) != 0
+        except Exception:
+            pin = bool(data.get("pinned"))
         if not name or name == "*":
             return jsonify({"ok": False, "error": "invalid_name"}), 400
         # Only one persistent pin (pinned=1) can be active; do not clear one-shot (pinned=2)

@@ -56,13 +56,13 @@ if persist:
 _log(f"[boot] db_path={s.db_path} log_dir={s.log_dir} official_base={s.official_base or '<unset>'}")
 
 # Database
-conn = dbm.get_conn(s.db_path)
-dbm.init_schema(conn)
-# Reap lingering trials
+_raw_conn = dbm.get_conn(s.db_path)
+dbm.init_schema(_raw_conn)
+# Reap lingering trials using raw conn (single-threaded at boot)
 try:
     now = utcnow_str()
-    with conn:
-        conn.execute(
+    with _raw_conn:
+        _raw_conn.execute(
             "UPDATE challenges SET status='interrupted', finished_at=? WHERE status IN ('running','queued')",
             (now,),
         )
@@ -73,7 +73,7 @@ except Exception:
 # Infra
 logger = JsonlLogger(s.log_dir)
 proxy = UpstreamProxy(s, logger)
-coord = Coordinator(s, conn, logger)
+coord = Coordinator(s, dbm.ConnProxy(s.db_path), logger)
 
 # Auth
 users = load_users(s.auth_file)
@@ -136,7 +136,7 @@ def _log_response(resp: Response):
 
 
 # Register route groups
-ctx = AppCtx(s=s, conn=conn, logger=logger, proxy=proxy, coord=coord, ui_guard=_ui_guard, bus=bus)
+ctx = AppCtx(s=s, conn=dbm.ConnProxy(s.db_path), logger=logger, proxy=proxy, coord=coord, ui_guard=_ui_guard, bus=bus)
 register_ui_routes(app, ctx)
 register_select_routes(app, ctx)
 register_api_routes(app, ctx)
@@ -153,7 +153,14 @@ def healthz():
 
 
 def main() -> None:
-    app.run(host="0.0.0.0", port=s.port, debug=False)
+    # Prefer waitress in production for threaded concurrency; fallback to Flask dev server
+    try:
+        from waitress import serve as _serve
+        _log(f"[boot] starting waitress on 0.0.0.0:{s.port} threads={s.waitress_threads}")
+        _serve(app, host="0.0.0.0", port=int(s.port), threads=int(s.waitress_threads))
+    except Exception as e:
+        _log(f"[boot] waitress not available ({e}); falling back to Flask dev server")
+        app.run(host="0.0.0.0", port=s.port, debug=False, threaded=True)
 
 
 if __name__ == "__main__":

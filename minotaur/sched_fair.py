@@ -123,7 +123,8 @@ def pick_pinned(conn: sqlite3.Connection) -> tuple[Optional[str], bool]:
 
 def set_pinned(conn: sqlite3.Connection, name: Optional[str]) -> None:
     with conn:
-        conn.execute("UPDATE agent_priorities SET pinned=0")
+        # Only clear persistent pins; keep any one-shot (pinned=2) intact
+        conn.execute("UPDATE agent_priorities SET pinned=0 WHERE pinned=1")
         if name:
             conn.execute(
                 "UPDATE agent_priorities SET pinned=1, updated_at=? WHERE name=?",

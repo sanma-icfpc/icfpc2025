@@ -82,6 +82,37 @@ class Coordinator:
                             })
                         except Exception:
                             pass
+                # If a one-shot selection exists but it's not in queue, try falling back to persistent pin
+                elif pin_one_shot:
+                    try:
+                        r2 = dbm.query_one(
+                            self.conn,
+                            "SELECT name FROM agent_priorities WHERE pinned=1 LIMIT 1",
+                        )
+                        if r2 and r2["name"]:
+                            rr = dbm.query_one(
+                                self.conn,
+                                "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
+                                (r2["name"],),
+                            )
+                            if rr is not None:
+                                chosen_name = r2["name"]
+                                chosen_id = int(rr["id"])
+                                chosen_ticket = rr["ticket"]
+                                if self.logger:
+                                    try:
+                                        self.logger.write({
+                                            "ev": "scheduler",
+                                            "action": "pinned_fallback",
+                                            "agent_name": chosen_name,
+                                            "one_shot_present": True,
+                                            "challenge_id": chosen_id,
+                                            "ticket": chosen_ticket,
+                                        })
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
             if chosen_id is None:
                 # Build candidates by agent name (queued only); treat NULL agent_name as '*'
                 qrows = dbm.query_all(
