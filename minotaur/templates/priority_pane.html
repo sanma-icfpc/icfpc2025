@@ -10,6 +10,7 @@
           <th class="text-left p-1">X-Agent-Name</th>
           <th class="text-left p-1">Status</th>
           <th class="text-left p-1">Priority</th>
+          <th class="text-left p-1">Share</th>
           <th class="text-left p-1">Pin</th>
           <th class="text-left p-1">Delete</th>
           <th class="text-left p-1">Select for Next</th>
@@ -30,6 +31,7 @@
             <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
           </td>
           <td class="p-1"><input type="number" min="1" max="100" step="1" class="border rounded px-2 py-1 w-20" value="{{ r.priority }}" /></td>
+          <td class="p-1 text-xs text-gray-500"><span data-share> w={{ r.priority }} v={{ '%.2f' % (r.vtime or 0) }} s={{ '%.1f' % (r.service or 0) }}</span></td>
           <td class="p-1">
             {% if r.name != '*' %}
             {% set pinned = r.pinned or 0 %}

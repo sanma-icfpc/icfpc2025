@@ -298,6 +298,7 @@
                 </td>
                 <td class="p-1"><span class="badge badge-${status}">${status}</span></td>
                 <td class="p-1"><input type="number" min="1" max="100" step="1" class="border rounded px-2 py-1 w-20" value="${prio}" /></td>
+                <td class="p-1 text-xs text-gray-500"><span data-share>w=${prio} v=${(row.vtime||0).toFixed ? row.vtime.toFixed(2) : '0.00'} s=${(row.service||0).toFixed ? row.service.toFixed(1) : '0.0'}</span></td>
                 <td class="p-1">${name !== '*' ? '<button data-pin class="px-2 py-1 text-xs ' + (pinned ? 'bg-yellow-500 text-white' : 'bg-gray-200') + '" onclick="togglePin(\'' + name + '\',' + (pinned ? 0 : 1) + '); return false;">' + (pinned ? 'Unpin' : 'Pin') + '</button>' : '<span class="text-gray-400">—</span>'}</td>
                 <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteAgentPriority(\'' + name + '\'); return false;">Delete</button>' : '<span class="text-gray-400">—</span>'}</td>
                 <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent(\'' + name + '\'); return false;">Select for Next</button>' : '<span class="text-gray-400">—</span>'}</td>
@@ -317,6 +318,13 @@
             if (inp && document.activeElement !== inp) {
               const cur = parseInt(inp.value || '0', 10);
               if (cur !== prio) inp.value = prio;
+            }
+            // Update share (weight/vtime/service)
+            const share = tr.querySelector('[data-share]');
+            if (share) {
+              const v = (typeof row.vtime === 'number') ? row.vtime : 0;
+              const s = (typeof row.service === 'number') ? row.service : 0;
+              share.textContent = `w=${prio} v=${v.toFixed(2)} s=${s.toFixed(1)}`;
             }
             // Update pin button
             let pinBtn = tr.querySelector('[data-pin]');

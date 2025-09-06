@@ -113,6 +113,16 @@ class Coordinator:
                         "first_enq": r["first_enq"],
                         "count": int(r["n"]),
                     })
+                # Log candidate snapshot before pick
+                if self.logger:
+                    try:
+                        self.logger.write({
+                            "ev": "scheduler",
+                            "action": "cfs_candidates",
+                            "candidates": candidates[:50],
+                        })
+                    except Exception:
+                        pass
                 candidates.sort(key=lambda x: (x["vtime"], x["first_enq"]))
                 pick = candidates[0]
                 chosen_name = pick["name"]

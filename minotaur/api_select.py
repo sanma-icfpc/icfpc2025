@@ -139,7 +139,11 @@ def register_select_routes(app, ctx: AppCtx) -> None:
                         ctx.conn.execute("SELECT id FROM challenges WHERE status='running' LIMIT 1").fetchone()
                         is None
                     )
-                    if none_running:
+                    other_waiting = ctx.conn.execute(
+                        "SELECT 1 FROM challenges WHERE status='queued' AND (agent_name IS NULL OR agent_name<>?) AND ticket<>? LIMIT 1",
+                        (agent_name, ticket),
+                    ).fetchone() is not None
+                    if none_running and not other_waiting:
                         sid = str(uuid.uuid4())
                         lease = (
                             datetime.now(timezone.utc) + timedelta(seconds=ctx.s.trial_ttl_sec)
@@ -172,6 +176,16 @@ def register_select_routes(app, ctx: AppCtx) -> None:
                         "ticket": ticket,
                         "challenge_id": ch_id,
                         "lease": lease,
+                    })
+                except Exception:
+                    pass
+            else:
+                try:
+                    ctx.logger.write({
+                        "ev": "select",
+                        "action": "defer_to_scheduler_after_preempt",
+                        "by_agent_name": agent_name,
+                        "ticket": ticket,
                     })
                 except Exception:
                     pass

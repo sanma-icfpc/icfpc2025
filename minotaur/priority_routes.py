@@ -50,11 +50,12 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
                 names.add(r["name"])
         rows: List[Dict] = []
         for n in names:
-            pr = ctx.conn.execute("SELECT priority FROM agent_priorities WHERE name=?", (n,)).fetchone()
+            pr = ctx.conn.execute("SELECT priority, vtime, service, pinned FROM agent_priorities WHERE name=?", (n,)).fetchone()
             p = int(pr["priority"]) if pr else _default_priority(ctx) if n != "*" else _default_priority(ctx)
-            pr2 = ctx.conn.execute("SELECT pinned FROM agent_priorities WHERE name=?", (n,)).fetchone()
-            pinned = int(pr2["pinned"]) if pr2 else 0
-            rows.append({"name": n, "priority": p, "status": _agent_status(ctx, n) if n != "*" else "inactive", "pinned": pinned})
+            v = float(pr["vtime"]) if pr and pr["vtime"] is not None else 0.0
+            sv = float(pr["service"]) if pr and pr["service"] is not None else 0.0
+            pinned = int(pr["pinned"]) if pr and pr["pinned"] is not None else 0
+            rows.append({"name": n, "priority": p, "vtime": v, "service": sv, "status": _agent_status(ctx, n) if n != "*" else "inactive", "pinned": pinned})
         # Ensure default row exists and is last
         if "*" not in names:
             rows.append({"name": "*", "priority": _default_priority(ctx), "status": "inactive"})
@@ -115,11 +116,12 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
                 names.add(r["name"])
         rows = []
         for n in names:
-            pr = ctx.conn.execute("SELECT priority FROM agent_priorities WHERE name=?", (n,)).fetchone()
+            pr = ctx.conn.execute("SELECT priority, vtime, service, pinned FROM agent_priorities WHERE name=?", (n,)).fetchone()
             p = int(pr["priority"]) if pr else _default_priority(ctx) if n != "*" else _default_priority(ctx)
-            pr2 = ctx.conn.execute("SELECT pinned FROM agent_priorities WHERE name=?", (n,)).fetchone()
-            pinned = int(pr2["pinned"]) if pr2 else 0
-            rows.append({"name": n, "priority": p, "status": _agent_status(ctx, n) if n != "*" else "inactive", "pinned": pinned})
+            v = float(pr["vtime"]) if pr and pr["vtime"] is not None else 0.0
+            sv = float(pr["service"]) if pr and pr["service"] is not None else 0.0
+            pinned = int(pr["pinned"]) if pr and pr["pinned"] is not None else 0
+            rows.append({"name": n, "priority": p, "vtime": v, "service": sv, "status": _agent_status(ctx, n) if n != "*" else "inactive", "pinned": pinned})
         return jsonify({"rows": rows})
 
     @app.route("/minotaur/priorities/pin", methods=["POST"])
