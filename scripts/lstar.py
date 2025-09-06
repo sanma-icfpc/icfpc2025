@@ -19,7 +19,8 @@ import requests
 import sys
 import datetime
 
-BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
+# BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
+BASE_URL = "http://127.0.0.1:8009/"
 ALPHABET = "012345"  # door labels
 
 # ---------- API Client ----------
@@ -197,10 +198,17 @@ class ExploreOracle:
             # initial label
             if self.init_label is not None:
                 return self.init_label
-            # trigger a tiny query to get it
-            self.ensure({"0"})
-            self.commit()
-            assert self.init_label is not None, "failed to acquire initial label"
+            # ❌ 余計な /explore は発行しない。
+            # 最初の観測表バッチ（非空語）と同じ応答から trace[0] を拾う。
+            for trace in self.trace_cache.values():
+                if trace:
+                    self.init_label = trace[0]
+                    break
+            if self.init_label is None:
+                raise RuntimeError(
+                    "Initial label is not available yet. "
+                    "Batch some non-empty words with ensure(...); commit() first."
+                )
             return self.init_label
         if w not in self.last_label:
             self.ensure({w})
