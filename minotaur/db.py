@@ -13,10 +13,16 @@ def get_conn(path: str) -> sqlite3.Connection:
     conn: Optional[sqlite3.Connection] = getattr(_LOCAL, "conn", None)
     if conn is not None:
         return conn
-    conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+    # Enable URI when using shared in-memory DB or file: URIs
+    use_uri = path.startswith("file:") or "mode=memory" in path or path.startswith("sqlite:")
+    conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None, uri=use_uri)
     conn.row_factory = sqlite3.Row
     with conn:
-        conn.execute("PRAGMA journal_mode=WAL;")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+        except Exception:
+            # WAL is not supported for in-memory DBs; ignore
+            pass
         conn.execute("PRAGMA synchronous=NORMAL;")
     _LOCAL.conn = conn
     return conn

@@ -62,13 +62,26 @@ class Settings:
 
 
 def load_settings_from_env() -> Settings:
+    # Resolve DB path with optional in-memory mode
+    env_db = os.getenv("MINOTAUR_DB") or os.getenv("MINOTUAR_DB") or None
+    mem_flag = getenv_bool("DB_IN_MEMORY") or getenv_bool("MINOTAUR_DB_IN_MEMORY")
+    db_path: str
+    if mem_flag or (env_db or "").strip().lower() in {":memory:", "memory"}:
+        # Use a shared in-memory database URI so that multiple connections (threads)
+        # see the same database. Requires sqlite3.connect(..., uri=True).
+        db_path = "file:minotaur?mode=memory&cache=shared"
+        print('using in-memory DB')
+    else:
+        db_path = env_db or str(Path(BASE_DIR) / "coordinator.sqlite")
+        print('using disk-backed DB')
+
     return Settings(
         official_base=os.getenv("OFFICIAL_BASE") or None,
         icfp_id=os.getenv("ICFP_ID"),
         port=int(os.getenv("PORT", "19384")),
         log_dir=resolve_under_base(os.getenv("LOG_DIR") or "logs"),
         # Accept both legacy typo and correct var name; default under package dir
-        db_path=(os.getenv("MINOTAUR_DB") or os.getenv("MINOTUAR_DB") or str(Path(BASE_DIR) / "coordinator.sqlite")),
+        db_path=db_path,
         trial_ttl_sec=int(os.getenv("TRIAL_TTL_SEC", "60")),
         base_priority_default=int(os.getenv("BASE_PRIORITY_DEFAULT", "50")),
         ageing_every_min=int(os.getenv("AGEING_EVERY_MIN", "5")),
