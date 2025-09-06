@@ -21,6 +21,7 @@ from .scheduler import Coordinator
 from .ui_routes import register_ui_routes
 from .api_routes import register_api_routes
 from .api_select import register_select_routes
+from .priority_routes import register_priority_routes
 
 
 def utcnow_str() -> str:
@@ -139,6 +140,7 @@ ctx = AppCtx(s=s, conn=conn, logger=logger, proxy=proxy, coord=coord, ui_guard=_
 register_ui_routes(app, ctx)
 register_select_routes(app, ctx)
 register_api_routes(app, ctx)
+register_priority_routes(app, ctx)
 
 
 @app.route("/minotaur/healthz")

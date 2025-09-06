@@ -16,6 +16,9 @@
     .badge-giveup { background:#f3e8ff; color:#6b21a8; }
     .badge-error { background:#ffe4e6; color:#9f1239; }
     .badge-interrupted { background:#e5e7eb; color:#374151; }
+    .badge-inactive { background:#f3f4f6; color:#6b7280; }
+    .badge-online { background:#dcfce7; color:#166534; }
+    .badge-offline { background:#fee2e2; color:#991b1b; }
   </style>
   </head>
 <body class="bg-gray-100 text-gray-900">
@@ -30,9 +33,10 @@
             <span class="">提出プロキシ & スケジューラ</span>
           </div>
         </div>
-        <div class="text-sm text-gray-600">
-          <span class="mr-1">接続中エージェント:</span>
+        <div class="text-sm text-gray-600 flex items-center space-x-2">
+          <span>接続中エージェント:</span>
           <span id="agent-count" class="font-mono">0</span>
+          <span id="sse-status" class="badge badge-offline ml-2">🔴 OFFLINE</span>
           <button class="ml-4 px-3 py-1 bg-gray-800 text-white rounded" onclick="openModal()">設定</button>
         </div>
       </div>
@@ -139,13 +143,18 @@
     function startSSE() {
       try {
         const es = new EventSource('/minotaur/stream');
-        es.addEventListener('change', function(_) { loadStatus(); updateAgentCount(); });
-        es.onerror = function(_) { /* EventSource will auto-reconnect */ };
+        setSSEStatus(false);
+        es.addEventListener('open', function(_) { setSSEStatus(true); });
+        es.onopen = function() { setSSEStatus(true); };
+        es.addEventListener('change', function(_) { loadStatus(); updateAgentCount(); refreshPriorityStatuses(); });
+        es.onerror = function(_) { setSSEStatus(false); /* auto-reconnect */ };
       } catch (_) {}
     }
     document.addEventListener('DOMContentLoaded', function() {
       loadStatus();
+      loadPriorities(true);
       updateAgentCount();
+      setSSEStatus(false);
       startSSE();
       setInterval(updateRelativeTimes, 1000);
     });
@@ -179,6 +188,130 @@
         .then(() => { loadStatus(); })
         .catch(() => { loadStatus(); });
       return false;
+    }
+
+    // ----- Priority pane (vanilla) -----
+    function collectPriorityItems() {
+      const rows = document.querySelectorAll('#priority-pane [data-row]');
+      const items = [];
+      rows.forEach(tr => {
+        const nameAttr = tr.getAttribute('data-name');
+        const cells = tr.querySelectorAll('td');
+        if (!cells || cells.length === 0) return;
+        if (nameAttr === '__new__') {
+          const name = (tr.querySelector('input[type=text]')?.value || '').trim();
+          const pri = parseInt(tr.querySelector('input[type=number]')?.value || '0', 10);
+          if (name) items.push({ name, priority: pri });
+          return;
+        }
+        const name = nameAttr;
+        const pri = parseInt(tr.querySelector('input[type=number]')?.value || '0', 10);
+        items.push({ name, priority: pri });
+      });
+      return items;
+    }
+    function loadPriorities(sort) {
+      const el = document.getElementById('priority-pane');
+      if (!el) return;
+      const url = '/minotaur/priorities' + (sort ? '?sort=1' : '');
+      fetch(url, { credentials: 'same-origin' })
+        .then(r => r.text())
+        .then(html => { el.innerHTML = html; })
+        .catch(() => {});
+    }
+    function applyAgentPriorities(sortAfter) {
+      const items = collectPriorityItems();
+      fetch('/minotaur/priorities/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+        credentials: 'same-origin'
+      }).then(() => { loadPriorities(!!sortAfter); loadStatus(); })
+        .catch(() => { loadPriorities(!!sortAfter); loadStatus(); });
+      return false;
+    }
+    function deleteAgentPriority(name) {
+      if (!confirm(`Delete priority for ${name}?`)) return false;
+      const row = document.querySelector(`#priority-pane [data-row][data-name="${CSS.escape(name)}"]`);
+      if (row) row.style.opacity = '0.5';
+      fetch('/minotaur/priorities/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+        credentials: 'same-origin'
+      }).then(() => { loadPriorities(false); })
+        .catch(() => { loadPriorities(false); });
+      return false;
+    }
+    function selectNextAgent(name) {
+      fetch('/minotaur/priorities/select_next', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+        credentials: 'same-origin'
+      }).then(() => { loadStatus(); })
+        .catch(() => { loadStatus(); });
+      return false;
+    }
+
+    function refreshPriorityStatuses() {
+      const pane = document.getElementById('priority-pane');
+      if (!pane) return;
+      fetch('/minotaur/priorities/data', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(j => {
+          const rows = j.rows || [];
+          const tableBody = pane.querySelector('#priority-rows');
+          if (!tableBody) return;
+          const existing = new Map();
+          tableBody.querySelectorAll('tr[data-row]').forEach(tr => { existing.set(tr.getAttribute('data-name'), tr); });
+          rows.forEach(row => {
+            const name = row.name;
+            const prio = row.priority;
+            const status = row.status;
+            let tr = existing.get(name);
+            if (!tr) {
+              // Append new row unsorted at the end, before the __new__ row
+              const newRow = document.createElement('tr');
+              newRow.setAttribute('data-row', '');
+              newRow.setAttribute('data-name', name);
+              newRow.innerHTML = `
+                <td class="p-1 font-mono truncate">${name === '*' ? '<span class="text-gray-500">(default)</span>' : name}</td>
+                <td class="p-1"><span class="badge badge-${status}">${status}</span></td>
+                <td class="p-1"><input type="number" min="1" max="100" step="1" class="border rounded px-2 py-1 w-20" value="${prio}" /></td>
+                <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteAgentPriority(\'' + name + '\'); return false;">Delete</button>' : '<span class="text-gray-400">—</span>'}</td>
+                <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent(\'' + name + '\'); return false;">Select for Next</button>' : '<span class="text-gray-400">—</span>'}</td>
+              `;
+              const newRowInput = tableBody.querySelector('tr[data-name="__new__"]');
+              tableBody.insertBefore(newRow, newRowInput ? newRowInput : null);
+              return;
+            }
+            // Update badge only (avoid changing layout)
+            const badge = tr.querySelector('.badge');
+            if (badge) {
+              badge.textContent = status;
+              badge.className = `badge badge-${status}`;
+            }
+            // Update priority input if not focused and not edited
+            const inp = tr.querySelector('input[type=number]');
+            if (inp && document.activeElement !== inp) {
+              const cur = parseInt(inp.value || '0', 10);
+              if (cur !== prio) inp.value = prio;
+            }
+          });
+        })
+        .catch(() => {});
+    }
+    function setSSEStatus(isOnline) {
+      const el = document.getElementById('sse-status');
+      if (!el) return;
+      if (isOnline) {
+        el.textContent = '🟢 ONLINE';
+        el.className = 'badge badge-online ml-2';
+      } else {
+        el.textContent = '🔴 OFFLINE';
+        el.className = 'badge badge-offline ml-2';
+      }
     }
   </script>
 </body>

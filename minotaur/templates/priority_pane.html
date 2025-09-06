@@ -1,0 +1,55 @@
+<div class="bg-white border rounded p-4">
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="font-semibold">Scheduler Priorities</h3>
+    <div class="text-sm text-gray-500">Input range: 1–100</div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="text-gray-500">
+        <tr>
+          <th class="text-left p-1">X-Agent-Name</th>
+          <th class="text-left p-1">Status</th>
+          <th class="text-left p-1">Priority</th>
+          <th class="text-left p-1">Delete</th>
+          <th class="text-left p-1">Select for Next</th>
+        </tr>
+      </thead>
+      <tbody id="priority-rows">
+        {% for r in rows %}
+        <tr data-row data-name="{{ r.name }}">
+          <td class="p-1 font-mono truncate">{% if r.name == '*' %}<span class="text-gray-500">(default)</span>{% else %}{{ r.name }}{% endif %}</td>
+          <td class="p-1">
+            <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+          </td>
+          <td class="p-1"><input type="number" min="1" max="100" step="1" class="border rounded px-2 py-1 w-20" value="{{ r.priority }}" /></td>
+          <td class="p-1">
+            {% if r.name != '*' %}
+            <button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteAgentPriority('{{ r.name }}'); return false;">Delete</button>
+            {% else %}
+            <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
+          <td class="p-1">
+            {% if r.name != '*' %}
+            <button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent('{{ r.name }}'); return false;">Select for Next</button>
+            {% else %}
+            <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        <!-- Add new row input -->
+        <tr data-row data-name="__new__">
+          <td class="p-1"><input type="text" placeholder="Add agent name" class="border rounded px-2 py-1 w-64" /></td>
+          <td class="p-1"><span class="badge badge-inactive">inactive</span></td>
+          <td class="p-1"><input type="number" min="1" max="100" step="1" class="border rounded px-2 py-1 w-20" value="50" /></td>
+          <td class="p-1"><span class="text-gray-400">—</span></td>
+          <td class="p-1"><span class="text-gray-400">—</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-3 text-right">
+    <button class="px-3 py-1.5 bg-green-600 text-white rounded" onclick="applyAgentPriorities(true); return false;">Apply</button>
+  </div>
+</div>

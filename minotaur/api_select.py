@@ -52,6 +52,20 @@ def _grant_waiting_if_idle(ctx: AppCtx) -> None:
 
 
 def register_select_routes(app, ctx: AppCtx) -> None:
+    def _agent_priority(name: str | None) -> int:
+        if name:
+            r = ctx.conn.execute(
+                "SELECT priority FROM agent_priorities WHERE name=?",
+                (name,),
+            ).fetchone()
+            if r is not None:
+                return int(r["priority"])
+        r = ctx.conn.execute(
+            "SELECT priority FROM agent_priorities WHERE name='*'",
+        ).fetchone()
+        if r is not None:
+            return int(r["priority"])
+        return int(ctx.s.base_priority_default)
     @app.route("/select", methods=["POST"])
     def select_route():
         body = request.get_json(silent=True) or {}
@@ -63,7 +77,7 @@ def register_select_routes(app, ctx: AppCtx) -> None:
         agent_name = request.headers.get("X-Agent-Name") or None
         git_sha = request.headers.get("X-Agent-Git") or None
 
-        base_prio = ctx.s.base_priority_default
+        base_prio = _agent_priority(agent_name)
         ticket = str(uuid.uuid4())
         enq = utcnow_str()
         eff = base_prio
@@ -236,4 +250,3 @@ def register_select_routes(app, ctx: AppCtx) -> None:
         except Exception:
             pass
         return make_response(jsonify(out))
-

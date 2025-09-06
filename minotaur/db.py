@@ -76,6 +76,22 @@ def init_schema(conn: sqlite3.Connection) -> None:
             );
             """
         )
+        # Agent priorities (per X-Agent-Name), includes a default row name='*'
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_priorities (
+              name TEXT PRIMARY KEY,
+              priority INTEGER NOT NULL,
+              updated_at TEXT
+            );
+            """
+        )
+        # Ensure default row exists
+        cur = conn.execute("SELECT 1 FROM agent_priorities WHERE name='*' LIMIT 1")
+        if cur.fetchone() is None:
+            conn.execute(
+                "INSERT INTO agent_priorities(name, priority, updated_at) VALUES('*', 50, datetime('now'))"
+            )
 
 
 def query_one(conn: sqlite3.Connection, sql: str, args: Iterable[Any] = ()) -> Optional[sqlite3.Row]:
