@@ -546,6 +546,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true", help="Hide judge process logs (shown by default)")
     parser.add_argument("--verbose", action="store_true", help="Enable HTTP payload logs (off by default)")
     parser.add_argument("--client-test", nargs="?", const="127.0.0.1:8009", metavar="HOST:PORT", help="Run as client tester (default: 127.0.0.1:8009)")
+    parser.add_argument("--name", default=None, help="Agent name for client-test; sent as X-Agent-Name header")
     parser.add_argument("--delay-ms", type=int, default=0, help="Delay between client-test requests in milliseconds (default: 0)")
     parser.add_argument("--timeout-ms", type=int, default=600_000, help="Client-test HTTP timeout in milliseconds (default: 600000 = 10 minutes)")
     rng_group = parser.add_mutually_exclusive_group()
@@ -572,7 +573,7 @@ if __name__ == "__main__":
         import http.client
         import os as _os
         _AGENT_ID = str(_os.getpid())
-        _AGENT_NAME = "local_judge_server_client"
+        _AGENT_NAME = args.name or "local_judge_server_client"
         _DELAY_SEC = max(0, int(args.delay_ms)) / 1000.0
         _TIMEOUT_SEC = max(1, int(args.timeout_ms)) / 1000.0
 

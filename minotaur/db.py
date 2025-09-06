@@ -24,7 +24,7 @@ def get_conn(path: str) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     with conn:
-        # Drop legacy tables if present; we prefer a clean schema
+        # Drop legacy tables if present; keep request logs across restarts
         conn.execute("DROP TABLE IF EXISTS trials;")
         conn.execute("DROP TABLE IF EXISTS settings;")
         # Challenges (one per agent's select-to-finish window)
@@ -60,7 +60,6 @@ def init_schema(conn: sqlite3.Connection) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uniq_single_running_chal ON challenges(status) WHERE status='running';"
         )
         # Per-request log within a challenge (phased flow)
-        conn.execute("DROP TABLE IF EXISTS challenge_requests;")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS challenge_requests (

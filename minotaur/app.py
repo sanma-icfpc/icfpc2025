@@ -52,17 +52,17 @@ if persist:
 _log(f"[boot] db_path={s.db_path} log_dir={s.log_dir} official_base={s.official_base or '<unset>'}")
 conn = dbm.get_conn(s.db_path)
 dbm.init_schema(conn)
-# On boot, mark lingering running/queued as error (move to recent)
+# On boot, mark lingering running/queued as interrupted (move to recent)
 try:
     now = utcnow_str()
     with conn:
-        conn.execute("UPDATE challenges SET status='error', finished_at=? WHERE status IN ('running','queued')", (now,))
-    _log("[boot] reaped lingering trials: running/queued -> error")
+        conn.execute("UPDATE challenges SET status='interrupted', finished_at=? WHERE status IN ('running','queued')", (now,))
+    _log("[boot] reaped lingering trials: running/queued -> interrupted")
 except Exception:
     pass
 logger = JsonlLogger(s.log_dir)
 proxy = UpstreamProxy(s, logger)
-coord = Coordinator(s, conn)
+coord = Coordinator(s, conn, logger)
 
 users = load_users(s.auth_file)
 _log(f"[boot] auth_file={s.auth_file} users={[u.username for u in users]}")
@@ -211,7 +211,7 @@ def index():
 def ui_status():
     running = dbm.query_one(conn, "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1")
     queued = dbm.query_all(conn, "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
-    recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
+    recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted') ORDER BY finished_at DESC LIMIT 20")
     # Build per-request flows grouped by req_key
     def fmt_ts(ts: str) -> str:
         try:
@@ -372,7 +372,7 @@ def ui_cancel_running():
     _bus.emit("cancel")
     running = dbm.query_one(conn, "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1")
     queued = dbm.query_all(conn, "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
-    recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
+    recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted') ORDER BY finished_at DESC LIMIT 20")
     def fmt_ts(ts: str) -> str:
         try:
             dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
@@ -504,6 +504,23 @@ def select_route():
     if ch_id is not None:
         rk = str(uuid.uuid4())
         _log_ch_req(ch_id, "select", rk, "agent_in", 0, {"problemName": problem}, {})
+        _bus.emit("change")
+        try:
+            logger.write({
+                "ev": "select",
+                "action": "enqueued",
+                "challenge_id": ch_id,
+                "ticket": ticket,
+                "problem": problem,
+                "agent_name": agent_name,
+                "agent_id": agent_id,
+                "git_sha": git_sha,
+                "base_priority": base_prio,
+                "effective_priority": eff,
+                "enqueued_at": enq,
+            })
+        except Exception:
+            pass
     try:
         qn = dbm.query_one(conn, "SELECT COUNT(1) AS n FROM challenges WHERE status='queued'")
         _log(f"[agent] enqueued ticket={ticket} queued={int(qn['n']) if qn else 0}")
@@ -511,16 +528,14 @@ def select_route():
         pass
     _bus.emit("enqueue")
 
-    # Preemption: if the same agent is currently running, force-finish it and immediately grant this ticket
+    # Preemption: if incoming name matches the running one, preempt; otherwise do not preempt
     if agent_name:
         preempt_giveup = False
         preempt_grant = False
         try:
             with dbm.tx(conn):
-                running = None
-                if agent_name is not None and agent_id is not None:
-                    running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' AND agent_name=? AND agent_id=? LIMIT 1", (agent_name, agent_id))
-                if running is not None:
+                running = dbm.query_one(conn, "SELECT id, ticket, agent_name FROM challenges WHERE status='running' LIMIT 1")
+                if running is not None and running["agent_name"] and running["agent_name"] == agent_name:
                     # Force-terminate the running trial for this agent
                     conn.execute(
                         "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
@@ -546,53 +561,30 @@ def select_route():
             pass
         if preempt_giveup:
             _bus.emit("preempt-giveup")
+            try:
+                logger.write({
+                    "ev": "select",
+                    "action": "preempt_giveup_same_agent",
+                    "by_agent_name": agent_name,
+                    "by_agent_id": agent_id,
+                    "ticket": ticket,
+                })
+            except Exception:
+                pass
         if preempt_grant:
             _bus.emit("preempt-grant")
+            try:
+                logger.write({
+                    "ev": "select",
+                    "action": "grant_immediate_same_agent",
+                    "ticket": ticket,
+                    "challenge_id": ch_id,
+                    "lease": lease,
+                })
+            except Exception:
+                pass
 
-    # If someone else is running but no one else is queued (except this ticket), preempt to keep flow snappy
-    # Guard carefully to avoid self-preempting this very ticket.
-    try:
-        did_giveup = False
-        did_grant = False
-        with dbm.tx(conn):
-            myrow = dbm.query_one(conn, "SELECT id, status FROM challenges WHERE ticket=?", (ticket,))
-            running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' LIMIT 1")
-            cnt_other = dbm.query_one(
-                conn,
-                "SELECT COUNT(1) AS n FROM challenges WHERE status='queued' AND ticket<>?",
-                (ticket,),
-            )
-            n_other = int(cnt_other["n"]) if cnt_other else 0
-            if (
-                running is not None
-                and running["ticket"] != ticket
-                and myrow is not None
-                and myrow["status"] == "queued"
-                and n_other == 0
-            ):
-                # preempt current (other) running and grant this ticket immediately
-                conn.execute(
-                    "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
-                    (utcnow_str(), running["id"]),
-                )
-                try:
-                    _log_ch_req(int(running["id"]), "event", str(uuid.uuid4()), "preempt_giveup", 0, {}, {})
-                except Exception:
-                    pass
-                did_giveup = True
-                sid = str(uuid.uuid4())
-                lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
-                conn.execute(
-                    "UPDATE challenges SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE ticket=? AND status='queued'",
-                    (utcnow_str(), lease, sid, ticket),
-                )
-                did_grant = True
-        if did_giveup:
-            _bus.emit("preempt-giveup")
-        if did_grant:
-            _bus.emit("preempt-grant")
-    except Exception:
-        pass
+    # Cross-agent fast preemption removed: do not preempt when names differ
 
     # Try grant immediately if idle (scheduler nudge)
     _grant_waiting_if_idle()
@@ -615,6 +607,15 @@ def select_route():
 
     if not started:
         # Fallback to async ack (no Retry-After header)
+        try:
+            logger.write({
+                "ev": "select",
+                "action": "queued_async",
+                "ticket": ticket,
+                "challenge_id": ch_id,
+            })
+        except Exception:
+            pass
         return make_response((jsonify({"status": "queued", "ticket": ticket}), 202))
 
     # Forward upstream select now that we are granted
@@ -624,6 +625,7 @@ def select_route():
         except NameError:
             rk = str(uuid.uuid4())
         _log_ch_req(ch_id, "select", rk, "to_upstream", 0, {"problemName": problem}, {})
+        _bus.emit("change")
     try:
         out = proxy.forward("/select", started, {"problemName": problem, "id": "ignored"}, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
@@ -634,6 +636,7 @@ def select_route():
             )
         if ch_id is not None:
             _log_ch_req(ch_id, "select", rk, "from_upstream", int(ue.status), {"problemName": problem}, ue.payload)
+            _bus.emit("change")
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
 
     # success: set lease and return upstream response
@@ -642,9 +645,22 @@ def select_route():
         conn.execute("UPDATE challenges SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
     if ch_id is not None:
         _log_ch_req(ch_id, "select", rk, "from_upstream", 200, {"problemName": problem}, out)
+        _bus.emit("change")
         _log_ch_req(ch_id, "select", rk, "agent_out", 200, {"problemName": problem}, out)
+        _bus.emit("change")
         _log_ch_req(ch_id, "select", rk, "agent_out", 200, {"problemName": problem}, out)
     _log(f"[agent] granted ticket={ticket} sid={started} lease={lease}")
+    try:
+        logger.write({
+            "ev": "select",
+            "action": "granted",
+            "ticket": ticket,
+            "challenge_id": ch_id,
+            "session_id": started,
+            "lease": lease,
+        })
+    except Exception:
+        pass
     return make_response(jsonify(out))
 
 
@@ -673,12 +689,15 @@ def explore_route():
     ch_id = int(cur["id"]) if cur else None
     if ch_id is not None:
         _log_ch_req(ch_id, "explore", rk, "agent_in", 0, body, {})
+        _bus.emit("change")
         _log_ch_req(ch_id, "explore", rk, "to_upstream", 0, body, {})
+        _bus.emit("change")
     try:
         out = proxy.forward("/explore", sid, body, state, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
         if ch_id is not None:
             _log_ch_req(ch_id, "explore", rk, "from_upstream", int(ue.status), body, ue.payload)
+            _bus.emit("change")
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
     # update qc and lease
     with conn:
@@ -691,7 +710,9 @@ def explore_route():
         pass
     if ch_id is not None:
         _log_ch_req(ch_id, "explore", rk, "from_upstream", 200, body, out)
+        _bus.emit("change")
         _log_ch_req(ch_id, "explore", rk, "agent_out", 200, body, out)
+        _bus.emit("change")
     _bus.emit("explore")
     return jsonify(out)
 
@@ -709,12 +730,15 @@ def guess_route():
     ch_id = int(cur["id"]) if cur else None
     if ch_id is not None:
         _log_ch_req(ch_id, "guess", rk, "agent_in", 0, body, {})
+        _bus.emit("change")
         _log_ch_req(ch_id, "guess", rk, "to_upstream", 0, body, {})
+        _bus.emit("change")
     try:
         out = proxy.forward("/guess", sid, body, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
         if ch_id is not None:
             _log_ch_req(ch_id, "guess", rk, "from_upstream", int(ue.status), body, ue.payload)
+            _bus.emit("change")
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
     running_id_row = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
     if bool(out.get("correct")):
@@ -727,7 +751,9 @@ def guess_route():
     _log(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}")
     if ch_id is not None:
         _log_ch_req(ch_id, "guess", rk, "from_upstream", 200, body, out)
+        _bus.emit("change")
         _log_ch_req(ch_id, "guess", rk, "agent_out", 200, body, out)
+        _bus.emit("change")
     _bus.emit("guess")
     return jsonify(out)
 

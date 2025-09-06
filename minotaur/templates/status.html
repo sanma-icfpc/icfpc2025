@@ -3,12 +3,16 @@
   <div class="bg-white border rounded p-4">
     <h3 class="font-semibold mb-2">Running</h3>
     {% if running %}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-        <div><span class="text-gray-500">ticket:</span> <code>{{ running.ticket }}</code></div>
-        <div><span class="text-gray-500">agent:</span> {{ running.agent_name or '-' }} <span class="text-gray-400">(id: {{ running.agent_id or '-' }})</span></div>
-        <div><span class="text-gray-500">src:</span> {{ running.source_ip or '-' }}</div>
-        <div><span class="text-gray-500">problem:</span> {{ running.problem_id }}</div>
-        <div><span class="text-gray-500">lease:</span> {{ running.lease_expire_at }}</div>
+      <div class="flex items-center flex-wrap gap-x-2 text-sm">
+        <span class="badge badge-running">running</span>
+        <span class="text-gray-500">problem:</span>
+        <span class="truncate">{{ running.problem_id }}</span>
+        <span class="ml-3 text-gray-500">agent:</span>
+        {{ running.agent_name or '-' }} <span class="text-gray-400">(id: {{ running.agent_id or '-' }})</span>
+      </div>
+      <div class="mt-1 text-xs text-gray-600">
+        <span class="text-gray-500">src:</span> {{ running.source_ip or '-' }}
+        <span class="ml-4 text-gray-500">ticket:</span> <code>{{ running.ticket }}</code>
       </div>
       <div class="mt-3">
         <button class="px-3 py-1 bg-red-600 text-white rounded" onclick="cancelRunning(event)">キャンセル</button>
@@ -26,7 +30,7 @@
             <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
               <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
               <div class="col-span-2">
-                <div>{{ f.api }}</div>
+                <div>/{{ f.api }}</div>
                 {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
               </div>
               <div class="col-span-4">
@@ -64,13 +68,18 @@
         {% for t in queued %}
         <div class="border rounded p-2 text-sm">
           <div class="flex items-center justify-between">
-            <div class="truncate">
-              <div><span class="text-gray-500">ticket:</span> <code>{{ t.ticket }}</code></div>
-              <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span></div>
-              <div><span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}</div>
-              <div><span class="text-gray-500">problem:</span> {{ t.problem_id }}</div>
+            <div class="flex items-center flex-wrap gap-x-2">
+              <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+              <span class="text-gray-500">problem:</span>
+              <span class="truncate">{{ t.problem_id }}</span>
+              <span class="ml-3 text-gray-500">agent:</span>
+              {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
             </div>
             <div class="text-xs text-gray-600">prio {{ t.effective_priority }}</div>
+          </div>
+          <div class="mt-1 text-xs text-gray-600">
+            <span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}
+            <span class="ml-4 text-gray-500">ticket:</span> <code>{{ t.ticket }}</code>
           </div>
           <div class="mt-2 text-xs bg-gray-50 border rounded p-2">
             {% set flows = queued_flows.get(t.id) %}
@@ -78,7 +87,7 @@
               <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
                 <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
                 <div class="col-span-2">
-                  <div>{{ f.api }}</div>
+                  <div>/{{ f.api }}</div>
                   {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
                 </div>
                 <div class="col-span-4">
@@ -123,15 +132,15 @@
               <div class="flex items-center justify-between">
                 <div class="w-full truncate">
                   <div class="flex items-center flex-wrap gap-x-2">
-                    <span class="text-gray-500">ticket:</span>
-                    <code class="mr-2">{{ t.ticket }}</code>
                     <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
-                    <span class="ml-3 text-gray-500">problem:</span>
+                    <span class="text-gray-500">problem:</span>
                     <span class="truncate">{{ t.problem_id }}</span>
+                    <span class="ml-3 text-gray-500">agent:</span>
+                    {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
                   </div>
-                  <div class="mt-1 text-gray-700">
-                    <span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
-                    <span class="ml-4 text-gray-500">src:</span> {{ t.source_ip or '-' }}
+                  <div class="mt-1 text-xs text-gray-600">
+                    <span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}
+                    <span class="ml-4 text-gray-500">ticket:</span> <code>{{ t.ticket }}</code>
                   </div>
                 </div>
               </div>
@@ -143,9 +152,9 @@
                     <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
                       <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
                       <div class="col-span-2">
-                        <div>{{ f.api }}</div>
-                        {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
-                      </div>
+                      <div>/{{ f.api }}</div>
+                      {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                    </div>
                       <div class="col-span-4">
                         <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
                         → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>

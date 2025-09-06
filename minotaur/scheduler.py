@@ -5,6 +5,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Callable
+from .logging import JsonlLogger
 
 from .config import Settings
 from . import db as dbm
@@ -21,12 +22,13 @@ class Coordinator:
     to ensure at most 1 running trial.
     """
 
-    def __init__(self, settings: Settings, conn):
+    def __init__(self, settings: Settings, conn, logger: Optional[JsonlLogger] = None):
         self.s = settings
         self.conn = conn
         self._stop = threading.Event()
         self._tick = 0
         self.on_change: Optional[Callable[[str], None]] = None
+        self.logger = logger
 
     def start(self) -> None:
         t = threading.Thread(target=self._run, name="minotaur-sweeper", daemon=True)
@@ -66,6 +68,18 @@ class Coordinator:
             )
             if cur.rowcount:
                 emitted = "grant"
+                if self.logger:
+                    try:
+                        self.logger.write({
+                            "ev": "scheduler",
+                            "action": "grant",
+                            "challenge_id": int(row["id"]),
+                            "ticket": row["ticket"],
+                            "base_priority": int(row["base_priority"]),
+                            "effective_priority": int(row["effective_priority"]),
+                        })
+                    except Exception:
+                        pass
         if emitted and self.on_change:
             try:
                 self.on_change(emitted)
@@ -77,12 +91,29 @@ class Coordinator:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         emitted: Optional[str] = None
         with dbm.tx(self.conn):
+            r = dbm.query_one(
+                self.conn,
+                "SELECT id, ticket, agent_name, agent_id FROM challenges WHERE status='running' AND lease_expire_at < ? LIMIT 1",
+                (now,),
+            )
             cur = self.conn.execute(
                 "UPDATE challenges SET status='timeout', finished_at=? WHERE status='running' AND lease_expire_at < ?",
                 (now, now),
             )
             if cur.rowcount:
                 emitted = "timeout"
+                if self.logger:
+                    try:
+                        self.logger.write({
+                            "ev": "scheduler",
+                            "action": "timeout",
+                            "challenge_id": int(r["id"]) if r and r["id"] is not None else None,
+                            "ticket": r["ticket"] if r else None,
+                            "agent_name": r["agent_name"] if r else None,
+                            "agent_id": r["agent_id"] if r else None,
+                        })
+                    except Exception:
+                        pass
         if emitted and self.on_change:
             try:
                 self.on_change(emitted)
