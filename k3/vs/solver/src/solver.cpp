@@ -17,6 +17,7 @@
 #include <omp.h>
 #include <filesystem>
 #include <intrin.h>
+
 /* g++ functions */
 int __builtin_clz(unsigned int n) { unsigned long index; _BitScanReverse(&index, n); return 31 - index; }
 int __builtin_ctz(unsigned int n) { unsigned long index; _BitScanForward(&index, n); return index; }
@@ -31,6 +32,32 @@ int __builtin_popcount(int bits) {
 /* enable __uint128_t in MSVC */
 //#include <boost/multiprecision/cpp_int.hpp>
 //using __uint128_t = boost::multiprecision::uint128_t;
+#include <windows.h>
+#include <psapi.h>
+template<typename Pred>
+static bool WaitFor(Pred pred, DWORD timeout_ms = INFINITE) {
+    std::cerr << __FUNCTION__ << ": waiting...\n";
+    DWORD wait = 500;
+    bool done = false;
+    while (!(done = pred()) && timeout_ms > 0) {
+        if (timeout_ms != INFINITE) {
+            if (timeout_ms < wait) wait = timeout_ms;
+            else timeout_ms -= wait;
+        }
+        Sleep(wait);
+        std::cerr << __FUNCTION__ << ": ...\n";
+    }
+    if (done) {
+        std::cerr << __FUNCTION__ << ": leaving (succeeded)\n";
+        Sleep(100);
+        return true;
+    }
+    std::cerr << __FUNCTION__ << ": leaving (timeout)\n";
+    return false;
+}
+bool WaitDebugger(DWORD timeout_ms) {
+    return WaitFor([] {return IsDebuggerPresent() != FALSE; }, timeout_ms);
+}
 #else
 #pragma GCC target("avx2")
 #pragma GCC optimize("O3")
@@ -254,7 +281,7 @@ struct Labyrinth {
     std::vector<int> explore_plan(const std::string& plan) const {
         Room cur = 0; // start index
         std::vector<int> out; out.reserve(plan.size() + 1);
-        out.push_back(cur);
+        out.push_back(labels[cur]);
         for (char ch : plan) {
             int d = ch - '0';
             if (d < 0 || d > 5) throw std::runtime_error("plan contains non-door digit");
@@ -679,7 +706,7 @@ namespace NLocalSearch {
         }
 
         Delta modify_random_two_switch(Xorshift& r) {
-            const int n = (int)to.size();
+            const int n = (int)to.size(); // nrooms * 6
             int p = r.next_u32(n), q;
             do {
                 q = r.next_u32(n);
@@ -708,12 +735,12 @@ namespace NLocalSearch {
 
         int calc_diff(const std::vector<int>& plan, const std::vector<int>& reference_labels) const {
             assert(plan.size() + 1 == reference_labels.size());
-            int cur = 0; // start is fixed
-            assert(reference_labels.front() == labels[cur / 6]);
+            int cur_room = 0; // start is fixed
+            assert(reference_labels.front() == labels[cur_room]);
             int diff = 0;
             for (int i = 1; i < (int)reference_labels.size(); ++i) {
-                cur = to[cur];
-                diff += labels[cur / 6] != reference_labels[i];
+                cur_room = to[cur_room * 6 + plan[i - 1]] / 6;
+                diff += labels[cur_room] != reference_labels[i];
             }
             return diff;
         }
@@ -726,6 +753,7 @@ namespace NLocalSearch {
 
     Labyrinth to_labyrinth(const State& s) {
         Labyrinth L;
+        const int n = L.labels.size();
         L.labels = s.labels;
         L.to.resize(L.labels.size());
         for (int r = 0; r < (int)L.labels.size(); r++) {
@@ -733,6 +761,18 @@ namespace NLocalSearch {
                 L.to[r][d] = Port::from_int(s.to[r * 6 + d]);
             }
         }
+        // 全扉が定義済みか確認
+        for (int r = 0; r < n; ++r)
+            for (int d = 0; d < 6; ++d)
+                if (L.to[r][d] == Port{ -1,-1 })
+                    throw std::runtime_error("door undefined: room=" + std::to_string(r) + " door=" + std::to_string(d));
+        for (int r = 0; r < n; ++r) {
+            for (int d = 0; d < 6; ++d) {
+                auto [r2, d2] = L.to[r][d];
+                assert(r == L.to[r2][d2].room && d == L.to[r2][d2].door);
+            }
+        }
+                
         return L;
     }
 
@@ -740,6 +780,11 @@ namespace NLocalSearch {
 
 
 int main() {
+
+#ifdef _DEBUG
+    WaitDebugger(INFINITE);
+    ::DebugBreak();
+#endif
 
     Timer timer;
 
@@ -767,9 +812,11 @@ int main() {
         return p;
     } ();
     
+    // send query
     std::cout << 1 << std::endl; // single plan
     std::cout << plan_str << std::endl;
 
+    // read labels
     const auto labels = []() {
         std::string labels_str;
         std::cin >> labels_str;
@@ -798,22 +845,33 @@ int main() {
 
     debug(timer.elapsed_ms(), iter, cost);
     double stime = timer.elapsed_ms(), ntime, etime = stime + 10000;
+    int rejected_count = 0;
     while ((ntime = timer.elapsed_ms()) < etime) {
         auto delta = state.modify_random(rnd);
         if (!delta.ok) continue;
         iter++;
         int ncost = state.calc_diff(plan, labels);
         int diff = ncost - cost;
-        double temp = get_temp(1.0, 0.0, ntime - stime, etime - stime);
+        //double temp = get_temp(1.0, 0.0, ntime - stime, etime - stime);
+        double temp = 0.3;
         double prob = exp(-diff / temp);
-        if (rnd.next_double() < prob || iter % 100000 == 0) {
+        if (rnd.next_double() < prob) {
+            rejected_count = 0;
             cost = ncost;
             if (chmin(min_cost, cost)) {
                 debug(timer.elapsed_ms(), iter, min_cost, cost);
+                if (!min_cost) break;
             }
         }
         else {
+            rejected_count++;
             state.undo(delta);
+        }
+        if (rejected_count >= 100000) { // kick
+            rejected_count = 0;
+            state.modify_random(rnd);
+            cost = state.calc_diff(plan, labels);
+            debug("kick!", timer.elapsed_ms(), iter, min_cost, cost);
         }
         if (iter % 10000000 == 0) {
             debug(timer.elapsed_ms(), iter, min_cost, cost);

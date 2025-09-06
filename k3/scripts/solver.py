@@ -25,8 +25,8 @@ class AedificiumClient:
         url = f"{self.base_url}{path}"
         r = requests.post(url, json=payload, timeout=60)
         r.raise_for_status()
-        print(f'req: {payload}')
-        print(f'res: {r.json()}')
+        # print(f'req: {payload}')
+        # print(f'res: {r.json()}')
         return r.json()
 
     def register(self, name: str, pl: str, email: str) -> str:
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         plans.append(plan)
 
     results, qctr = client.explore(plans)
-    print(results, qctr) # ([[0, 3, 1, 1, 3, 1, 3], [0, 1, 1, 3, 1, 0, 3]], 3)
+    # print(results, qctr) # ([[0, 3, 1, 1, 3, 1, 3], [0, 1, 1, 3, 1, 0, 3]], 3)
 
     # send label-path list
     for rec in results:
