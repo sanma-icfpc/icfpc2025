@@ -373,9 +373,10 @@
               badge.textContent = status;
               badge.className = `badge badge-${status}`;
             }
-            // Update priority input if not focused
+            // Update priority input if not focused and not dirty
             const inp = tr.querySelector('input[type=number]');
-            if (inp && document.activeElement !== inp) {
+            const isDirty = !!(inp && inp.getAttribute('data-dirty') === '1');
+            if (inp && document.activeElement !== inp && !isDirty) {
               const cur = parseInt(inp.value || '0', 10);
               if (cur !== prio) inp.value = prio;
             }
@@ -384,7 +385,14 @@
             if (share) {
               const v = (typeof row.vtime === 'number') ? row.vtime : 0;
               const s = (typeof row.service === 'number') ? row.service : 0;
-              share.textContent = `w=${prio} v=${v.toFixed(2)} s=${s.toFixed(1)}`;
+              let dispW = prio;
+              try {
+                if (inp && inp.getAttribute('data-dirty') === '1') {
+                  const cur = parseInt(inp.value || `${prio}`, 10);
+                  if (!Number.isNaN(cur) && cur > 0) dispW = cur;
+                }
+              } catch (_) {}
+              share.textContent = `w=${dispW} v=${v.toFixed(2)} s=${s.toFixed(1)}`;
             }
             // Update pin button
             let pinBtn = tr.querySelector('[data-pin]');
@@ -407,6 +415,25 @@
         })
         .catch(() => {});
     }
+    // Mark inputs dirty on user edit to prevent auto-reload from overwriting
+    document.addEventListener('input', function(ev) {
+      const t = ev.target;
+      if (!t) return;
+      try {
+        if (t.closest && t.closest('#priority-pane') && t.matches && t.matches('input[type=number]')) {
+          t.setAttribute('data-dirty', '1');
+        }
+      } catch (_) {}
+    }, true);
+    document.addEventListener('change', function(ev) {
+      const t = ev.target;
+      if (!t) return;
+      try {
+        if (t.closest && t.closest('#priority-pane') && t.matches && t.matches('input[type=number]')) {
+          t.setAttribute('data-dirty', '1');
+        }
+      } catch (_) {}
+    }, true);
     function updateIdenticons(scope) {
       const run = () => {
         try {
