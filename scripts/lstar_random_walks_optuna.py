@@ -33,7 +33,7 @@ def solve(
     print("Selected:", chosen)
 
     oracle = lstar.ExploreOracle(client)
-    learner = lstar_random_walks.LStarMooreRandomWalkfLearner(
+    learner = lstar_random_walks.LStarMooreRandomWalkLearner(
         oracle,
         max_loops,
         num_random_walks,

@@ -1,7 +1,7 @@
 import lstar
 
 
-class LStarMooreRandomWalkfLearner(lstar.LStarMooreLearner):
+class LStarMooreRandomWalkLearner(lstar.LStarMooreLearner):
     """
     Moore 型オートマトン用 L* 学習器。閉性／一貫性／反例検出で仮説を修正。
     """
