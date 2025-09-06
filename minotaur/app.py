@@ -346,15 +346,11 @@ def ui_agent_count():
     # 接続中のエージェント数（queued/running の重複しない agent_name 単位。agent_name が無い場合は ticket で数える）
     row = dbm.query_one(
         conn,
-        "SELECT COUNT(DISTINCT COALESCE(agent_name, ticket)) AS n FROM trials WHERE status IN ('queued','running')",
+        "SELECT COUNT(DISTINCT COALESCE(agent_name, ticket)) AS n FROM challenges WHERE status IN ('queued','running')",
     )
     n = int(row["n"]) if row else 0
-    # UIの部品として自身を再生成（hx属性を保持したまま outerHTML 置換可能）
-    html = (
-        f"<span id=\"agent-count\" class=\"font-mono\" "
-        f"hx-get=\"/minotaur/agent_count\" hx-trigger=\"load, sse:change\" hx-swap=\"outerHTML\">{n}</span>"
-    )
-    return make_response(html)
+    # Vanilla JS consumes JSON; return simple count
+    return jsonify({"n": n})
 
 
 @app.route("/minotaur/cancel_running", methods=["POST"])

@@ -31,7 +31,7 @@
         </div>
         <div class="text-sm text-gray-600">
           <span class="mr-1">接続中エージェント:</span>
-          <span id="agent-count" hx-get="/minotaur/agent_count" hx-trigger="revealed, sse:change" hx-swap="outerHTML" class="font-mono">0</span>
+          <span id="agent-count" class="font-mono">0</span>
           <button class="ml-4 px-3 py-1 bg-gray-800 text-white rounded" onclick="openModal()">設定</button>
         </div>
       </div>
@@ -59,14 +59,24 @@
     // ----- Status auto refresh via SSE -----
     let statusInFlight = false;
     let expandedKeys = new Set();
+    let detailsOpenIdx = [];
+    let innerScrollTops = [];
     function captureUIState() {
+      // Expanded flow rows
       expandedKeys.clear();
       document.querySelectorAll('#status .flow-row.expanded').forEach(el => {
         const k = el.getAttribute('data-key');
         if (k) expandedKeys.add(k);
       });
+      // Open <details>
+      detailsOpenIdx = [];
+      const allDetails = Array.from(document.querySelectorAll('#status details'));
+      allDetails.forEach((d, i) => { if (d.open) detailsOpenIdx.push(i); });
+      // Inner scrollable containers
+      innerScrollTops = Array.from(document.querySelectorAll('#status .overflow-auto, #status .overflow-y-auto')).map(el => el.scrollTop);
     }
     function restoreUIState() {
+      // Expanded flow rows
       document.querySelectorAll('#status .flow-row').forEach(el => {
         const k = el.getAttribute('data-key');
         if (k && expandedKeys.has(k)) {
@@ -75,6 +85,14 @@
           if (detail) detail.classList.remove('hidden');
         }
       });
+      // Open <details>
+      const allDetails = Array.from(document.querySelectorAll('#status details'));
+      detailsOpenIdx.forEach(i => { if (allDetails[i]) allDetails[i].open = true; });
+      // Restore inner scrolls
+      const inner = Array.from(document.querySelectorAll('#status .overflow-auto, #status .overflow-y-auto'));
+      for (let i = 0; i < inner.length && i < innerScrollTops.length; i++) {
+        try { inner[i].scrollTop = innerScrollTops[i]; } catch (_) {}
+      }
     }
     function updateRelativeTimes() {
       const now = Date.now();
@@ -111,15 +129,22 @@
         .catch(() => {})
         .finally(() => { statusInFlight = false; el.scrollTop = prevScroll; restoreUIState(); updateRelativeTimes(); });
     }
+    function updateAgentCount() {
+      fetch('/minotaur/agent_count', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(j => { const el = document.getElementById('agent-count'); if (el && typeof j.n === 'number') el.textContent = j.n; })
+        .catch(() => {});
+    }
     function startSSE() {
       try {
         const es = new EventSource('/minotaur/stream');
-        es.addEventListener('change', function(_) { loadStatus(); });
+        es.addEventListener('change', function(_) { loadStatus(); updateAgentCount(); });
         es.onerror = function(_) { /* EventSource will auto-reconnect */ };
       } catch (_) {}
     }
     document.addEventListener('DOMContentLoaded', function() {
       loadStatus();
+      updateAgentCount();
       startSSE();
       setInterval(updateRelativeTimes, 1000);
     });
