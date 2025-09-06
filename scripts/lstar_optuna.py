@@ -65,7 +65,7 @@ if __name__ == "__main__":
                 with lock:
                     # For safety in an example script; remove in production
                     try:
-                        bfs_depth = trial.suggest_int("bfs_depth", 1, 5)
+                        bfs_depth = trial.suggest_int("bfs_depth", 1, 4)
                         bfs_adoption_propbability = trial.suggest_float(
                             "bfs_adoption_propbability", 0.0, 1.0
                         )
