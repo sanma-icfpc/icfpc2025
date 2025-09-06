@@ -8,4 +8,10 @@ dependencies = [
     "flask>=2.3",
     "requests>=2.31",
     "PyYAML>=6.0",
+    "waitress>=3.0.2",
+    "pytest>=8.4.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".."]
