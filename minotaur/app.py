@@ -56,7 +56,7 @@ dbm.init_schema(conn)
 try:
     now = utcnow_str()
     with conn:
-        conn.execute("UPDATE trials SET status='error', finished_at=? WHERE status IN ('running','queued')", (now,))
+        conn.execute("UPDATE challenges SET status='error', finished_at=? WHERE status IN ('running','queued')", (now,))
     _log("[boot] reaped lingering trials: running/queued -> error")
 except Exception:
     pass
@@ -181,11 +181,11 @@ def _compute_effective_priority(base: int, enqueued_at: str) -> int:
 
 
 def _recalc_priorities() -> None:
-    rows = dbm.query_all(conn, "SELECT id, base_priority, enqueued_at FROM trials WHERE status='queued'")
+    rows = dbm.query_all(conn, "SELECT id, base_priority, enqueued_at FROM challenges WHERE status='queued'")
     with conn:
         for r in rows:
             eff = _compute_effective_priority(int(r["base_priority"]), r["enqueued_at"])
-            conn.execute("UPDATE trials SET effective_priority=? WHERE id=?", (eff, r["id"]))
+            conn.execute("UPDATE challenges SET effective_priority=? WHERE id=?", (eff, r["id"]))
 
 
 def _grant_waiting_if_idle() -> None:
@@ -209,10 +209,16 @@ def index():
 @app.route("/minotaur/status")
 @_ui_guard.require()
 def ui_status():
-    running = dbm.query_one(conn, "SELECT ticket, agent_name, problem_id, lease_expire_at FROM trials WHERE status='running' ORDER BY started_at DESC LIMIT 1")
-    queued = dbm.query_all(conn, "SELECT ticket, agent_name, problem_id, effective_priority FROM trials WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
-    recent = dbm.query_all(conn, "SELECT ticket, status, problem_id, agent_name FROM trials WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
-    return render_template("status.html", running=running, queued=queued, recent=recent)
+    running = dbm.query_one(conn, "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1")
+    queued = dbm.query_all(conn, "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
+    recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
+    # Attach requests per card
+    def reqs(ch_id: int):
+        return dbm.query_all(conn, "SELECT kind, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
+    running_reqs = reqs(running["id"]) if running else []
+    queued_reqs_map = {c["id"]: reqs(c["id"]) for c in queued}
+    recent_reqs_map = {c["id"]: reqs(c["id"]) for c in recent}
+    return render_template("status.html", running=running, running_reqs=running_reqs, queued=queued, queued_reqs=queued_reqs_map, recent=recent, recent_reqs=recent_reqs_map)
 
 
 @app.route("/minotaur/settings", methods=["GET", "POST"])
@@ -276,18 +282,24 @@ def ui_agent_count():
 def ui_cancel_running():
     now = utcnow_str()
     with conn:
-        conn.execute(
-            "UPDATE trials SET status='giveup', finished_at=? WHERE status='running'",
-            (now,),
-        )
+        # identify running challenge to add event log
+        cur = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
+        if cur is not None:
+            conn.execute("INSERT INTO challenge_requests(challenge_id, kind, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?)", (int(cur["id"]), "cancel", 0, "{}", "{}", now))
+        conn.execute("UPDATE challenges SET status='giveup', finished_at=? WHERE status='running'", (now,))
     # nudge scheduler to grant next
     _grant_waiting_if_idle()
     # Return refreshed status partial so HTMX can replace it immediately
     _bus.emit("cancel")
-    running = dbm.query_one(conn, "SELECT ticket, agent_name, problem_id, lease_expire_at FROM trials WHERE status='running' ORDER BY started_at DESC LIMIT 1")
-    queued = dbm.query_all(conn, "SELECT ticket, agent_name, problem_id, effective_priority FROM trials WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
-    recent = dbm.query_all(conn, "SELECT ticket, status, problem_id, agent_name FROM trials WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
-    return render_template("status.html", running=running, queued=queued, recent=recent)
+    running = dbm.query_one(conn, "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1")
+    queued = dbm.query_all(conn, "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
+    recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
+    def reqs(ch_id: int):
+        return dbm.query_all(conn, "SELECT kind, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
+    running_reqs = reqs(running["id"]) if running else []
+    queued_reqs_map = {c["id"]: reqs(c["id"]) for c in queued}
+    recent_reqs_map = {c["id"]: reqs(c["id"]) for c in recent}
+    return render_template("status.html", running=running, running_reqs=running_reqs, queued=queued, queued_reqs=queued_reqs_map, recent=recent, recent_reqs=recent_reqs_map)
 
 
 @app.route("/minotaur/healthz")
@@ -300,6 +312,14 @@ def healthz():
 
 
 # ========== Transparent API ==========
+def _log_ch_req(ch_id: int, kind: str, status_code: int, req_obj: Dict[str, Any], res_obj: Dict[str, Any]) -> None:
+    try:
+        conn.execute(
+            "INSERT INTO challenge_requests(challenge_id, kind, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?)",
+            (int(ch_id), kind, int(status_code), json.dumps(req_obj, ensure_ascii=False), json.dumps(res_obj, ensure_ascii=False), utcnow_str()),
+        )
+    except Exception:
+        pass
 @app.route("/select", methods=["POST"])
 def select_route():
     body = request.get_json(silent=True) or {}
@@ -321,11 +341,15 @@ def select_route():
     eff = base_prio
     with conn:
         conn.execute(
-            "INSERT INTO trials(ticket, problem_id, params_json, agent_name, git_sha, base_priority, effective_priority, status, enqueued_at) VALUES(?,?,?,?,?,?,?,?,?)",
-            (ticket, problem, json.dumps(body.get("params") or {}), agent_name, git_sha, base_prio, eff, "queued", enq),
+            "INSERT INTO challenges(ticket, problem_id, agent_name, git_sha, base_priority, effective_priority, status, enqueued_at) VALUES(?,?,?,?,?,?,?,?)",
+            (ticket, problem, agent_name, git_sha, base_prio, eff, "queued", enq),
         )
+    ch = dbm.query_one(conn, "SELECT id FROM challenges WHERE ticket=?", (ticket,))
+    ch_id = int(ch["id"]) if ch else None
+    if ch_id is not None:
+        _log_ch_req(ch_id, "enqueue", 0, {"problemName": problem}, {})
     try:
-        qn = dbm.query_one(conn, "SELECT COUNT(1) AS n FROM trials WHERE status='queued'")
+        qn = dbm.query_one(conn, "SELECT COUNT(1) AS n FROM challenges WHERE status='queued'")
         _log(f"[agent] enqueued ticket={ticket} queued={int(qn['n']) if qn else 0}")
     except Exception:
         pass
@@ -337,21 +361,25 @@ def select_route():
         preempt_grant = False
         try:
             with dbm.tx(conn):
-                running = dbm.query_one(conn, "SELECT id, ticket FROM trials WHERE status='running' AND agent_name=? LIMIT 1", (agent_name,))
+                running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' AND agent_name=? LIMIT 1", (agent_name,))
                 if running is not None:
                     # Force-terminate the running trial for this agent
                     conn.execute(
-                        "UPDATE trials SET status='giveup', finished_at=? WHERE id=? AND status='running'",
+                        "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
                         (utcnow_str(), running["id"]),
                     )
+                    try:
+                        _log_ch_req(int(running["id"]), "preempt_giveup", 0, {}, {})
+                    except Exception:
+                        pass
                     preempt_giveup = True
                 # If no other running exists now, grant this ticket immediately
-                none_running = dbm.query_one(conn, "SELECT id FROM trials WHERE status='running' LIMIT 1") is None
+                none_running = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1") is None
                 if none_running:
                     sid = str(uuid.uuid4())
                     lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
                     conn.execute(
-                        "UPDATE trials SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE ticket=? AND status='queued'",
+                        "UPDATE challenges SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE ticket=? AND status='queued'",
                         (utcnow_str(), lease, sid, ticket),
                     )
                     preempt_grant = True
@@ -370,10 +398,10 @@ def select_route():
         did_grant = False
         with dbm.tx(conn):
             myrow = dbm.query_one(conn, "SELECT id, status FROM trials WHERE ticket=?", (ticket,))
-            running = dbm.query_one(conn, "SELECT id, ticket FROM trials WHERE status='running' LIMIT 1")
+            running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' LIMIT 1")
             cnt_other = dbm.query_one(
                 conn,
-                "SELECT COUNT(1) AS n FROM trials WHERE status='queued' AND ticket<>?",
+                "SELECT COUNT(1) AS n FROM challenges WHERE status='queued' AND ticket<>?",
                 (ticket,),
             )
             n_other = int(cnt_other["n"]) if cnt_other else 0
@@ -386,14 +414,18 @@ def select_route():
             ):
                 # preempt current (other) running and grant this ticket immediately
                 conn.execute(
-                    "UPDATE trials SET status='giveup', finished_at=? WHERE id=? AND status='running'",
+                    "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
                     (utcnow_str(), running["id"]),
                 )
+                try:
+                    _log_ch_req(int(running["id"]), "preempt_giveup", 0, {}, {})
+                except Exception:
+                    pass
                 did_giveup = True
                 sid = str(uuid.uuid4())
                 lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
                 conn.execute(
-                    "UPDATE trials SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE ticket=? AND status='queued'",
+                    "UPDATE challenges SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE ticket=? AND status='queued'",
                     (utcnow_str(), lease, sid, ticket),
                 )
                 did_grant = True
@@ -411,11 +443,15 @@ def select_route():
     started = None
     deadline = time.time() + max(5 * 60, s.trial_ttl_sec)  # hard cap wait
     while time.time() < deadline:
-        row = dbm.query_one(conn, "SELECT status, session_id FROM trials WHERE ticket=?", (ticket,))
+        row = dbm.query_one(conn, "SELECT status, session_id, id FROM challenges WHERE ticket=?", (ticket,))
         if row is None:
             break
         if row["status"] == "running" and row["session_id"]:
             started = row["session_id"]
+            try:
+                ch_id = int(row["id"]) if row["id"] is not None else ch_id
+            except Exception:
+                pass
             break
         time.sleep(0.2)
 
@@ -429,28 +465,32 @@ def select_route():
     except UpstreamError as ue:
         with conn:
             conn.execute(
-                "UPDATE trials SET status='error', finished_at=? WHERE ticket=?",
+                "UPDATE challenges SET status='error', finished_at=? WHERE ticket=?",
                 (utcnow_str(), ticket),
             )
+        if ch_id is not None:
+            _log_ch_req(ch_id, "select", int(ue.status), {"problemName": problem}, ue.payload)
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
 
     # success: set lease and return upstream response
     lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
     with conn:
-        conn.execute("UPDATE trials SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
+        conn.execute("UPDATE challenges SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
+    if ch_id is not None:
+        _log_ch_req(ch_id, "select", 200, {"problemName": problem}, out)
     _log(f"[agent] granted ticket={ticket} sid={started} lease={lease}")
     return make_response(jsonify(out))
 
 
 def _current_running_session() -> Optional[str]:
-    row = dbm.query_one(conn, "SELECT session_id FROM trials WHERE status='running' LIMIT 1")
+    row = dbm.query_one(conn, "SELECT session_id FROM challenges WHERE status='running' LIMIT 1")
     return row["session_id"] if row and row["session_id"] else None
 
 
 def _touch_lease() -> None:
     lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
     with conn:
-        conn.execute("UPDATE trials SET lease_expire_at=? WHERE status='running'", (lease,))
+        conn.execute("UPDATE challenges SET lease_expire_at=? WHERE status='running'", (lease,))
 
 
 @app.route("/explore", methods=["POST"])
@@ -468,13 +508,17 @@ def explore_route():
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
     # update qc and lease
     with conn:
-        conn.execute("UPDATE trials SET upstream_query_count=? WHERE status='running'", (int(out.get("queryCount", 0)),))
+        conn.execute("UPDATE challenges SET upstream_query_count=? WHERE status='running'", (int(out.get("queryCount", 0)),))
     _touch_lease()
     try:
         plans = body.get("plans") or []
         _log(f"[agent] /explore agent_id={agent_id or '-'} sid={sid} plans={len(plans)} qc->{int(out.get('queryCount',0))}")
     except Exception:
         pass
+    # log request under current running challenge
+    cur = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
+    if cur is not None:
+        _log_ch_req(int(cur["id"]), "explore", 200, body, out)
     _bus.emit("explore")
     return jsonify(out)
 
@@ -491,14 +535,17 @@ def guess_route():
         out = proxy.forward("/guess", sid, body, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
+    running_id_row = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
     if bool(out.get("correct")):
         with conn:
             conn.execute(
-                "UPDATE trials SET status='success', finished_at=? WHERE status='running'",
+                "UPDATE challenges SET status='success', finished_at=? WHERE status='running'",
                 (utcnow_str(),),
             )
     _touch_lease()
     _log(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}")
+    if running_id_row is not None:
+        _log_ch_req(int(running_id_row["id"]), "guess", 200, body, out)
     _bus.emit("guess")
     return jsonify(out)
 

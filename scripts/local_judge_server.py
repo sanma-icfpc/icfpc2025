@@ -546,6 +546,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true", help="Hide judge process logs (shown by default)")
     parser.add_argument("--verbose", action="store_true", help="Enable HTTP payload logs (off by default)")
     parser.add_argument("--client-test", nargs="?", const="127.0.0.1:8009", metavar="HOST:PORT", help="Run as client tester (default: 127.0.0.1:8009)")
+    parser.add_argument("--delay-ms", type=int, default=0, help="Delay between client-test requests in milliseconds (default: 0)")
     rng_group = parser.add_mutually_exclusive_group()
     rng_group.add_argument("--rng-fixed", action="store_true", help="Use fixed RNG seed by default (default)")
     rng_group.add_argument("--rng-random", action="store_true", help="Use true randomness by default")
@@ -570,6 +571,7 @@ if __name__ == "__main__":
         import http.client
         import os as _os
         _AGENT_ID = f"local_judge_server:{_os.getpid()}"
+        _DELAY_SEC = max(0, int(args.delay_ms)) / 1000.0
 
         def post_json(path: str, obj: Dict):
             body = json.dumps(obj)
@@ -592,6 +594,8 @@ if __name__ == "__main__":
                 data = {"_raw": text}
             print(f"POST {path} -> {resp.status}\nreq: {obj}\nres: {data}\n")
             conn.close()
+            if _DELAY_SEC > 0:
+                time.sleep(_DELAY_SEC)
             return resp.status, data
 
         print(f"Client test against http://{target_host}:{target_port}\n")

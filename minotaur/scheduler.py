@@ -49,19 +49,19 @@ class Coordinator:
     def _grant_if_idle(self) -> None:
         emitted: Optional[str] = None
         with dbm.tx(self.conn):
-            run = dbm.query_one(self.conn, "SELECT id FROM trials WHERE status='running' LIMIT 1")
+            run = dbm.query_one(self.conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
             if run is not None:
                 return
             row = dbm.query_one(
                 self.conn,
-                "SELECT id, ticket, base_priority, effective_priority FROM trials WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 1",
+                "SELECT id, ticket, base_priority, effective_priority FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 1",
             )
             if row is None:
                 return
             sid = str(uuid.uuid4())
             lease = datetime.now(timezone.utc) + timedelta(seconds=self.s.trial_ttl_sec)
             cur = self.conn.execute(
-                "UPDATE trials SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE id=? AND status='queued'",
+                "UPDATE challenges SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE id=? AND status='queued'",
                 (utcnow_str(), lease.isoformat().replace("+00:00", "Z"), sid, row["id"]),
             )
             if cur.rowcount:
@@ -78,7 +78,7 @@ class Coordinator:
         emitted: Optional[str] = None
         with dbm.tx(self.conn):
             cur = self.conn.execute(
-                "UPDATE trials SET status='timeout', finished_at=? WHERE status='running' AND lease_expire_at < ?",
+                "UPDATE challenges SET status='timeout', finished_at=? WHERE status='running' AND lease_expire_at < ?",
                 (now, now),
             )
             if cur.rowcount:
