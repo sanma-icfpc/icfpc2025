@@ -33,6 +33,7 @@ def solve(problem_name: str):
 
     ok = client.guess(guess_map)
     print("Guess correct?", ok)
+    print(f"{oracle.last_query_count=}")
     print(flush=True)
 
 
