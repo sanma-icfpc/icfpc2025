@@ -636,8 +636,8 @@ namespace NLocalSearch {
     ) {
         constexpr int multistart_iter = 100;
         constexpr int innerloop_iter = 1000000;
-        constexpr double start_temp = 0.3;
-        constexpr double end_temp = 0.3;
+        constexpr double start_temp = 1.0;
+        constexpr double end_temp = 0.01;
 
         Xorshift rnd;
 

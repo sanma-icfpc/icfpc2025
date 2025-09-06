@@ -7,8 +7,6 @@ import subprocess
 import threading
 from io import TextIOBase
 
-# BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
-BASE_URL = "http://127.0.0.1:8009"
 ALPHABET = "012345"  # door labels
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,7 +15,7 @@ CPP_EXE = os.path.join(ROOT_DIR, 'vs', 'solver', 'bin', 'Release', 'solver.exe')
 # ---------- API Client ----------
 
 class AedificiumClient:
-    def __init__(self, base_url: str = BASE_URL, team_id: str = 'ignored'):
+    def __init__(self, base_url: str, team_id: str = 'ignored'):
         self.base_url = base_url.rstrip("/")
         self.id = team_id
 
@@ -143,8 +141,14 @@ class CppSolverProcess:
 
 if __name__ == '__main__':
 
-    client = AedificiumClient()
-    problem_name = client.select_problem('probatio')
+    BASE_URL = "http://127.0.0.1:8009"
+    client = AedificiumClient(base_url=BASE_URL)
+
+    # BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
+    # client = AedificiumClient(base_url=BASE_URL, team_id=os.getenv('ICFP_ID'))
+
+    problem_name = client.select_problem('secundus')
+    print(f'problem_name: {problem_name}')
 
     # launch cpp solver
     cpp = CppSolverProcess(CPP_EXE)
@@ -170,7 +174,7 @@ if __name__ == '__main__':
         plans.append(plan)
 
     results, qctr = client.explore(plans)
-    # print(results, qctr) # ([[0, 3, 1, 1, 3, 1, 3], [0, 1, 1, 3, 1, 0, 3]], 3)
+    print(f'results: {results}, qc: {qctr}')
 
     # send label-path list
     for rec in results:
@@ -179,7 +183,9 @@ if __name__ == '__main__':
 
     # receive solution (json)
     sol = cpp.read_json_object()
+    print(f'sol={sol}')
     
     cpp.close()
 
-    client.guess(sol)
+    result = client.guess(sol)
+    print(f'result={result}')
