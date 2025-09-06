@@ -55,6 +55,8 @@ class Settings:
 
     # WSGI/Waitress
     waitress_threads: int
+    # Scheduler tuning
+    pin_hold_sec: float
 
     @property
     def is_mock(self) -> bool:
@@ -93,6 +95,7 @@ def load_settings_from_env() -> Settings:
         auth_file=resolve_under_base(os.getenv("AUTH_FILE") or "users.yaml"),
         settings_file=resolve_under_base(os.getenv("SETTINGS_FILE") or "settings.yaml"),
         waitress_threads=int(os.getenv("WAITRESS_THREADS", "32")),
+        pin_hold_sec=float(os.getenv("PIN_HOLD_SEC", "10.0")),
     )
 
 

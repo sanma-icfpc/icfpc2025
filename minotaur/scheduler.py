@@ -28,6 +28,11 @@ class Coordinator:
         self.conn = conn
         self._stop = threading.Event()
         self._tick = 0
+        # When a persistent pin exists but the agent has nothing queued,
+        # briefly hold grants to allow the pinned agent to enqueue again.
+        # This reduces races where others get granted between back-to-back
+        # runs of the pinned agent.
+        self._pin_hold_until: float = 0.0
         self.on_change: Optional[Callable[[str], None]] = None
         self.logger = logger
 
@@ -111,6 +116,20 @@ class Coordinator:
                                         })
                                     except Exception:
                                         pass
+                    except Exception:
+                        pass
+                # Persistent pin present but nothing queued: optionally hold for a short window
+                elif not pin_one_shot:
+                    try:
+                        import time as _t
+                        now = _t.time()
+                        if self._pin_hold_until <= 0:
+                            self._pin_hold_until = now + float(self.s.pin_hold_sec)
+                            return  # defer this grant cycle
+                        if now < self._pin_hold_until:
+                            return  # still within hold window; defer
+                        # hold elapsed; clear and continue to fair selection fallback
+                        self._pin_hold_until = 0.0
                     except Exception:
                         pass
             if chosen_id is None:
