@@ -30,7 +30,6 @@ def resolve_under_base(path_str: str) -> str:
 class Settings:
     # Upstream / Mock
     official_base: Optional[str]
-    mock: bool
     icfp_id: Optional[str]
 
     # Server
@@ -62,7 +61,6 @@ class Settings:
 def load_settings_from_env() -> Settings:
     return Settings(
         official_base=os.getenv("OFFICIAL_BASE") or None,
-        mock=getenv_bool("MOCK", False),
         icfp_id=os.getenv("ICFP_ID"),
         port=int(os.getenv("PORT", "19384")),
         log_dir=resolve_under_base(os.getenv("LOG_DIR") or "logs"),

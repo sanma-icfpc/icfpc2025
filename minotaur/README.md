@@ -30,8 +30,7 @@
 
 ## Configuration (env vars)
 - `ICFP_ID`: Team id (required, never commit)
-- `OFFICIAL_BASE`: Upstream base URL; unset/empty enables MOCK mode
-- `MOCK`: `1` to force mock mode, `0` otherwise
+- `OFFICIAL_BASE`: Upstream base URL（テスト時はローカルジャッジを指定）
 - `PORT`: Listen port (default `19384`)
 - `LOG_DIR`: JSONL logs directory (default `./logs`)
 - `MINOTAUR_DB`: SQLite path (default `./coordinator.sqlite`)
@@ -57,7 +56,7 @@
 - `POST /guess {id?:string, map:{...}}` → forwards; on `correct:true` marks `success`.
 - Behavior:
   - If another trial is running, `/select` blocks until granted (or may return `202` queued after a long wait).
-  - In MOCK mode, fixed plausible responses are returned; `/guess` accepts `{map:{answer:"ok"}}` as success.
+  - 全ての呼び出しは上流（OFFICIAL_BASE）へ透過転送されます。
 
 ## Admin/Health (UI)
 - `GET /` → Dashboard (requires Basic Auth)

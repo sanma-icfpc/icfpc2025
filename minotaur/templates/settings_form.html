@@ -5,11 +5,6 @@
     <p class="text-xs text-gray-500 mt-1">上流（公式）APIのベースURL。未設定または空欄のときはMOCKモードで動作します。</p>
   </div>
   <div>
-    <label class="block text-sm font-medium text-gray-800">MOCKモード（MOCK）</label>
-    <input class="w-full border rounded p-2 mt-1" type="text" name="MOCK" value="{{ '1' if mock else '0' }}" />
-    <p class="text-xs text-gray-500 mt-1">「1（true）」で強制的にモック応答を使用。0 で無効。OFFICIAL_BASE が空の場合もモックになります。</p>
-  </div>
-  <div>
     <label class="block text-sm font-medium text-gray-800">トライアルのリース秒数（TRIAL_TTL_SEC）</label>
     <input class="w-full border rounded p-2 mt-1" type="number" min="10" step="1" name="TRIAL_TTL_SEC" value="{{ trial_ttl_sec }}" />
     <p class="text-xs text-gray-500 mt-1">現在実行中の試行が占有できる最大秒数。/explore と /guess で更新され、タイムアウトで解放されます。</p>

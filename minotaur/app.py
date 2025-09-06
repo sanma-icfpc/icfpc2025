@@ -36,9 +36,6 @@ if persist:
     try:
         if "OFFICIAL_BASE" in persist:
             s.official_base = persist.get("OFFICIAL_BASE") or None
-        if "MOCK" in persist:
-            v = str(persist.get("MOCK", "")).strip().lower()
-            s.mock = v in ("1", "true", "yes", "on")
         if "TRIAL_TTL_SEC" in persist:
             s.trial_ttl_sec = int(persist.get("TRIAL_TTL_SEC", s.trial_ttl_sec))
         if "LOG_DIR" in persist:
@@ -46,9 +43,17 @@ if persist:
         print(f"[boot] loaded settings from YAML {s.settings_file}: keys={list(persist.keys())}", flush=True)
     except Exception:
         print(f"[boot] failed to apply YAML settings from {s.settings_file}", flush=True)
-print(f"[boot] db_path={s.db_path} log_dir={s.log_dir} official_base={'<mock>' if not s.official_base else s.official_base}", flush=True)
+print(f"[boot] db_path={s.db_path} log_dir={s.log_dir} official_base={s.official_base or '<unset>'}", flush=True)
 conn = dbm.get_conn(s.db_path)
 dbm.init_schema(conn)
+# On boot, mark lingering running/queued as error (move to recent)
+try:
+    now = utcnow_str()
+    with conn:
+        conn.execute("UPDATE trials SET status='error', finished_at=? WHERE status IN ('running','queued')", (now,))
+    print("[boot] reaped lingering trials: running/queued -> error", flush=True)
+except Exception:
+    pass
 logger = JsonlLogger(s.log_dir)
 proxy = UpstreamProxy(s, logger)
 coord = Coordinator(s, conn)
@@ -59,11 +64,38 @@ _ui_guard = BasicAuthGuard(users)
 _cv = threading.Condition()
 
 
-# ===== Access logging =====
+# ===== Access logging (directional) =====
+AGENT_ENDPOINTS = {"/select", "/explore", "/guess"}
+
+
+def _body_snippet() -> str:
+    try:
+        if request.method in ("POST", "PUT", "PATCH"):
+            data = request.get_data(cache=True, as_text=True)  # safe to read
+            if not data:
+                return ""
+            s = data.strip().replace("\n", " ")
+            if len(s) > 500:
+                s = s[:500] + "..."
+            return s
+        return ""
+    except Exception:
+        return ""
+
+
 @app.before_request
 def _log_request() -> None:
     try:
-        print(f"[access] recv {request.method} {request.path}", flush=True)
+        prefix = "[webui -> minotaur]"
+        if request.path in AGENT_ENDPOINTS:
+            aid = request.headers.get("X-Agent-ID") or "-"
+            git = request.headers.get("X-Agent-Git") or "-"
+            prefix = f"[agent -> minotaur] agent_id={aid} git={git}"
+        if request.path == "/minotaur/agent_count":
+            return  # reduce noise for frequent polling
+        b = _body_snippet()
+        extra = f" body={b}" if b else ""
+        print(f"{prefix} {request.method} {request.path}{extra}", flush=True)
     except Exception:
         pass
 
@@ -71,7 +103,12 @@ def _log_request() -> None:
 @app.after_request
 def _log_response(resp: Response):
     try:
-        print(f"[access] send {request.method} {request.path} -> {resp.status_code}", flush=True)
+        if request.path == "/minotaur/agent_count":
+            return resp
+        prefix = "[webui <- minotaur]"
+        if request.path in AGENT_ENDPOINTS:
+            prefix = "[agent <- minotaur]"
+        print(f"{prefix} {request.method} {request.path} -> {resp.status_code}", flush=True)
     except Exception:
         pass
     return resp
@@ -158,7 +195,6 @@ def index():
     return render_template(
         "index.html",
         official_base=s.official_base,
-        mock=s.is_mock,
         trial_ttl_sec=s.trial_ttl_sec,
         log_dir=s.log_dir,
     )
@@ -188,8 +224,6 @@ def ui_settings():
         # Apply to live settings
         if "OFFICIAL_BASE" in kv:
             s.official_base = kv.get("OFFICIAL_BASE") or None
-        if "MOCK" in kv:
-            s.mock = (kv.get("MOCK", "").strip().lower() in ("1", "true", "yes", "on"))
         if "TRIAL_TTL_SEC" in kv:
             try:
                 s.trial_ttl_sec = int(kv.get("TRIAL_TTL_SEC", s.trial_ttl_sec))
@@ -200,16 +234,18 @@ def ui_settings():
             s.log_dir = log_dir_new
             logger.log_dir = log_dir_new
         try:
-            print(
-                f"[settings] applied OFFICIAL_BASE={s.official_base or '<mock>'} MOCK={s.mock} TRIAL_TTL_SEC={s.trial_ttl_sec} LOG_DIR={s.log_dir}",
-                flush=True,
-            )
+            print(f"[settings] applied OFFICIAL_BASE={s.official_base or '<unset>'} TRIAL_TTL_SEC={s.trial_ttl_sec} LOG_DIR={s.log_dir}", flush=True)
         except Exception:
             pass
         _bus.emit("settings")
         return Response(status=204)
     # GET: return form partial for modal
-    return render_template("settings_form.html", official_base=s.official_base, mock=s.is_mock, trial_ttl_sec=s.trial_ttl_sec, log_dir=s.log_dir)
+    return render_template(
+        "settings_form.html",
+        official_base=s.official_base,
+        trial_ttl_sec=s.trial_ttl_sec,
+        log_dir=s.log_dir,
+    )
 
 
 @app.route("/minotaur/agent_count")
@@ -355,10 +391,7 @@ def select_route():
     lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
     with conn:
         conn.execute("UPDATE trials SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
-    try:
-        print(f"[agent] granted ticket={ticket} sid={started} lease={lease}", flush=True)
-    except Exception:
-        pass
+    print(f"[agent] granted ticket={ticket} sid={started} lease={lease}", flush=True)
     return make_response(jsonify(out))
 
 
@@ -418,10 +451,7 @@ def guess_route():
                 (utcnow_str(),),
             )
     _touch_lease()
-    try:
-        print(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}", flush=True)
-    except Exception:
-        pass
+    print(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}", flush=True)
     _bus.emit("guess")
     return jsonify(out)
 

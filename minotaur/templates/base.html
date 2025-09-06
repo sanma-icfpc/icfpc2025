@@ -25,7 +25,7 @@
         </div>
         <div class="text-sm text-gray-600">
           <span class="mr-1">接続中エージェント:</span>
-          <span id="agent-count" hx-get="/minotaur/agent_count" hx-trigger="load, sse:change" hx-swap="outerHTML" class="font-mono">0</span>
+          <span id="agent-count" hx-get="/minotaur/agent_count" hx-trigger="revealed, sse:change" hx-swap="outerHTML" class="font-mono">0</span>
           <button class="ml-4 px-3 py-1 bg-gray-800 text-white rounded" onclick="openModal()">設定</button>
         </div>
       </div>

@@ -2,7 +2,7 @@
 {% block content %}
 <div>
   <h2 class="font-semibold mb-2">ステータス</h2>
-  <div id="status" hx-get="/minotaur/status" hx-trigger="load, sse:change" hx-swap="outerHTML">
+  <div id="status" hx-get="/minotaur/status" hx-trigger="revealed, sse:change" hx-swap="outerHTML">
     Loading...
   </div>
 </div>
