@@ -194,7 +194,7 @@ public:
     }
 };
 
-#if 0
+#if 1
 inline double get_temp(double stemp, double etemp, double t, double T) {
     return etemp + (stemp - etemp) * (T - t) / T;
 };
@@ -490,154 +490,6 @@ Labyrinth generate_random_labyrinth(int n_rooms, std::optional<uint64_t> seed = 
     return L;
 }
 
-//======================= ジャッジ本体 =======================
-struct ExploreResult {
-
-    std::vector<std::string> plans;
-    std::vector<std::vector<int>> results;
-    int queryCount = 0;
-
-    std::string str() const {
-        std::ostringstream oss;
-        oss << "ExploreResult [\n";
-        assert(plans.size() == results.size());
-        for (size_t i = 0; i < plans.size(); i++) {
-            oss << "    Plan: " << plans[i] << ", Result: " << results[i] << '\n';
-        }
-        oss << "    queryCount: " << queryCount << '\n';
-        oss << ']';
-        return oss.str();
-    }
-};
-
-struct LocalJudge {
-
-    std::optional<Labyrinth> active;
-    int queryCount = 0;
-    std::optional<uint64_t> rng_seed;
-    std::optional<std::string> problem_name;
-
-    std::string select_problem(const std::string& name, std::optional<uint64_t> seed = std::nullopt) {
-        auto it = catalog.find(name);
-        if (it == catalog.end()) throw std::runtime_error("unknown problemName");
-        int n = it->second;
-        rng_seed = seed;
-        active = generate_random_labyrinth(n, seed);
-        problem_name = name;
-        queryCount = 0;
-        return name;
-    }
-
-    ExploreResult explore(const std::vector<std::string>& plans) {
-        if (!active.has_value()) throw std::runtime_error("select a problem first");
-        ExploreResult er;
-        er.plans = plans;
-        for (auto& p : plans) er.results.push_back(active->explore_plan(p));
-        // 「探索回数 = 送ったルート数 + リクエスト1のペナルティ」
-        queryCount += (int)plans.size() + 1;
-        er.queryCount = queryCount;
-        return er;
-    }
-
-    bool guess(const GuessMap& gm) {
-        if (!active.has_value()) throw std::runtime_error("select a problem first");
-        bool ok = false;
-        try {
-            Labyrinth cand = gm.to_labyrinth();
-            ok = equivalent(*active, cand);
-        }
-        catch (...) {
-            // 例外は不正解扱い
-            ok = false;
-        }
-        // /guess は常に問題をクリア（成功/失敗に関わらずデセレクト）
-        active.reset();
-        rng_seed.reset();
-        problem_name.reset();
-        queryCount = 0;
-        return ok;
-    }
-};
-
-//======================= 簡易デモ（雰囲気用） =======================
-int demo() {
-    std::ios::sync_with_stdio(false);
-    std::cin.tie(nullptr);
-
-    std::cout << "== demo ==\n";
-    LocalJudge J;
-    J.select_problem("probatio", /*seed*/ 42);
-
-    auto er = J.explore({ "0", "123", "505" });
-    std::cout << "queryCount=" << er.queryCount << "\n";
-    for (auto& rec : er.results) {
-        for (size_t i = 0; i < rec.size(); ++i) {
-            if (i) std::cout << ' ';
-            std::cout << rec[i];
-        }
-        std::cout << "\n";
-    }
-
-    // いい加減な誤答（全扉未定義のため to_labyrinth() で例外→false になる想定）
-    GuessMap bad;
-    bad.rooms = { 0,1,2 };
-    bad.connections = {
-        {{0,0},{1,1}},
-        {{0,1},{2,2}},
-        {{0,2},{0,2}}, // 自己ループ例
-        // …本来は全ポート(部屋×6)を埋める必要あり
-    };
-    bool ok = J.guess(bad);
-    std::cout << "guess(correct?)=" << (ok ? "true" : "false") << "\n";
-
-    // 以降、本気で使う場合はライブラリとして import 想定：
-    // - select_problem(name, seed)
-    // - explore(std::vector<std::string>)
-    // - guess(GuessMap)
-    return 0;
-}
-
-void solve_local() {
-
-    Timer timer;
-
-    const std::string problem_name = "probatio";
-
-    LocalJudge J;
-    J.select_problem(problem_name, /*seed*/ 42);
-
-    std::cerr << J.active.value() << '\n';
-
-    const auto n_rooms = catalog.at(problem_name);
-    debug(n_rooms);
-
-    std::string cmds;
-    for (int i = 0; i < n_rooms * 18; i++) {
-        cmds.push_back(char(i % 6) + '0');
-    }
-
-    std::mt19937_64 engine(0);
-    std::shuffle(cmds.begin(), cmds.end(), engine);
-    debug(cmds);
-
-    auto er = J.explore({ cmds });
-
-    size_t iter = 0;
-    Labyrinth lab;
-    while (true) {
-        iter++;
-        lab = generate_random_labyrinth(n_rooms, engine());
-        auto labels = lab.explore_plan(cmds);
-        if (er.results.front() == labels) {
-            debug(iter);
-            break;
-        }
-    }
-
-    debug(equivalent(J.active.value(), lab), timer.elapsed_ms());
-
-    std::cerr << er << '\n';
-}
 
 namespace NLocalSearch {
 
@@ -691,9 +543,10 @@ namespace NLocalSearch {
             // p, q: compressed port
             Delta d; d.type = Delta::Type::TWO_SWITCH;
             assert(p < (int)to.size() && q < (int)to.size());
-            assert(p != q);
+            assert(p != q); // 現行実装だと自己ループを含む操作の Undo で assertion error が起きる
             const int P = to[p], Q = to[q];
-            if (P == q || Q == p) {
+            //if (P == q || Q == p) {
+            if (P == q || Q == p || p == P || q == Q || P == Q) {
                 d.ok = false;
                 return d;
             }
@@ -733,14 +586,14 @@ namespace NLocalSearch {
             }
         }
 
-        int calc_diff(const std::vector<int>& plan, const std::vector<int>& reference_labels) const {
-            assert(plan.size() + 1 == reference_labels.size());
+        int calc_diff(const std::vector<int>& plan, const std::vector<int>& target_labels) const {
+            assert(plan.size() + 1 == target_labels.size());
             int cur_room = 0; // start is fixed
-            assert(reference_labels.front() == labels[cur_room]);
+            assert(target_labels.front() == labels[cur_room]);
             int diff = 0;
-            for (int i = 1; i < (int)reference_labels.size(); ++i) {
+            for (int i = 1; i < (int)target_labels.size(); ++i) {
                 cur_room = to[cur_room * 6 + plan[i - 1]] / 6;
-                diff += labels[cur_room] != reference_labels[i];
+                diff += labels[cur_room] != target_labels[i];
             }
             return diff;
         }
@@ -776,6 +629,75 @@ namespace NLocalSearch {
         return L;
     }
 
+    GuessMap multistart_annealing(
+        const int num_rooms,
+        const std::vector<int>& plan,
+        const std::vector<int>& target_labels
+    ) {
+        constexpr int multistart_iter = 100;
+        constexpr int innerloop_iter = 1000000;
+        constexpr double start_temp = 0.3;
+        constexpr double end_temp = 0.3;
+
+        Xorshift rnd;
+
+        State global_best_state;
+        int global_min_cost = INT_MAX;
+
+        int trial;
+        for (trial = 0; trial < multistart_iter; trial++) {
+            if (!global_min_cost) break;
+
+            ofs << format("--- trial %3d begin ---\n", trial);
+
+            auto L = generate_random_labyrinth(num_rooms, rnd.next_u64());
+            L.labels[0] = target_labels[0]; // 出発地点を 0 とし、そのラベルは固定
+
+            State state(L); // Labyrinth -> State
+            int cost = state.calc_diff(plan, target_labels);
+
+            State best_state(state);
+            int min_cost = cost;
+
+            ofs << format("initial cost: %d\n", cost);
+
+            int step;
+            for (step = 0; step < innerloop_iter; step++) {
+                auto delta = state.modify_random(rnd);
+                if (!delta.ok) continue;
+                int new_cost = state.calc_diff(plan, target_labels);
+                int diff = new_cost - cost;
+                double temp = get_temp(start_temp, end_temp, step, innerloop_iter);
+                double prob = exp(-diff / temp);
+                if (rnd.next_double() < prob) { // accepted
+                    cost = new_cost;
+                    if (chmin(min_cost, cost)) {
+                        best_state = state;
+                        ofs << format("step=%10d, min_cost=%4d, cost=%4d\n", step, min_cost, cost);
+                        if (!min_cost) break;
+                    }
+                }
+                else {
+                    state.undo(delta);
+                }
+            }
+            ofs << format("step=%10d, min_cost=%4d, cost=%4d\n", step, min_cost, cost);
+
+            if (min_cost < global_min_cost) {
+                ofs << format("global min cost updated: %4d -> %4d\n", global_min_cost, min_cost);
+                global_min_cost = min_cost;
+                global_best_state = best_state;
+            }
+
+            ofs << format("--- trial %3d end   ---\n", trial);
+        }
+
+        ofs << format("num trial: %3d, global min cost: %4d\n", trial, global_min_cost);
+
+        GuessMap gm(to_labyrinth(global_best_state));
+        return gm;
+    }
+
 }
 
 
@@ -799,12 +721,12 @@ int main() {
         return catalog.at(line);
     }();
 
-    const int max_plan_length = num_rooms * 18;
-    debug(max_plan_length);
+    const int plan_length = num_rooms * 18;
+    debug(plan_length);
 
-    const auto plan_str = [&max_plan_length, &engine] () {
+    const auto plan_str = [&plan_length, &engine] () {
         std::string p;
-        for (int i = 0; i < max_plan_length; i++) {
+        for (int i = 0; i < plan_length; i++) {
             p.push_back(char(i % 6) + '0');
         }
         std::shuffle(p.begin(), p.end(), engine);
@@ -817,7 +739,7 @@ int main() {
     std::cout << plan_str << std::endl;
 
     // read labels
-    const auto labels = []() {
+    const auto target_labels = []() {
         std::string labels_str;
         std::cin >> labels_str;
         std::vector<int> labels;
@@ -827,60 +749,15 @@ int main() {
         }
         return labels;
         } ();
-    debug(labels);
+    debug(target_labels);
 
     std::vector<int> plan;
     for (char ch : plan_str) plan.push_back(ch - '0');
     debug(plan);
 
-    auto L = generate_random_labyrinth(num_rooms, 42);
-    L.labels[0] = labels[0]; // 出発地点を 0 とし、そのラベルは固定
+    auto gm = NLocalSearch::multistart_annealing(num_rooms, plan, target_labels);
+    std::cout << gm.to_json() << std::endl;
 
-    NLocalSearch::State state(L);
-
-    size_t iter = 0;
-    Xorshift rnd;
-    int cost = state.calc_diff(plan, labels);
-    int min_cost = cost;
-
-    debug(timer.elapsed_ms(), iter, cost);
-    double stime = timer.elapsed_ms(), ntime, etime = stime + 10000;
-    int rejected_count = 0;
-    while ((ntime = timer.elapsed_ms()) < etime) {
-        auto delta = state.modify_random(rnd);
-        if (!delta.ok) continue;
-        iter++;
-        int ncost = state.calc_diff(plan, labels);
-        int diff = ncost - cost;
-        //double temp = get_temp(1.0, 0.0, ntime - stime, etime - stime);
-        double temp = 0.3;
-        double prob = exp(-diff / temp);
-        if (rnd.next_double() < prob) {
-            rejected_count = 0;
-            cost = ncost;
-            if (chmin(min_cost, cost)) {
-                debug(timer.elapsed_ms(), iter, min_cost, cost);
-                if (!min_cost) break;
-            }
-        }
-        else {
-            rejected_count++;
-            state.undo(delta);
-        }
-        if (rejected_count >= 100000) { // kick
-            rejected_count = 0;
-            state.modify_random(rnd);
-            cost = state.calc_diff(plan, labels);
-            debug("kick!", timer.elapsed_ms(), iter, min_cost, cost);
-        }
-        if (iter % 10000000 == 0) {
-            debug(timer.elapsed_ms(), iter, min_cost, cost);
-        }
-    }
-    debug(timer.elapsed_ms(), iter, min_cost, cost);
-
-    GuessMap m(NLocalSearch::to_labyrinth(state));
-    std::cout << m.to_json() << std::endl;
-
+    debug(timer.elapsed_ms());
 	return 0;
 }
