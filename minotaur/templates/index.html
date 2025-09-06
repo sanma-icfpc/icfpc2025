@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+  <div class="md:col-span-2">
+    <h2 class="font-semibold mb-2">Status</h2>
+    <div id="status" hx-get="/minotaur/status" hx-trigger="load, every 2s" hx-swap="outerHTML">
+      Loading...
+    </div>
+  </div>
+  <div>
+    <h2 class="font-semibold mb-2">Settings</h2>
+    <form class="space-y-2" hx-post="/minotaur/settings" hx-swap="none">
+      <label class="block text-sm">OFFICIAL_BASE
+        <input class="w-full border p-1" type="text" name="OFFICIAL_BASE" value="{{ official_base or '' }}" />
+      </label>
+      <label class="block text-sm">MOCK
+        <input class="w-full border p-1" type="text" name="MOCK" value="{{ '1' if mock else '0' }}" />
+      </label>
+      <label class="block text-sm">TRIAL_TTL_SEC
+        <input class="w-full border p-1" type="number" name="TRIAL_TTL_SEC" value="{{ trial_ttl_sec }}" />
+      </label>
+      <label class="block text-sm">LOG_DIR
+        <input class="w-full border p-1" type="text" name="LOG_DIR" value="{{ log_dir }}" />
+      </label>
+      <div class="text-right">
+        <button class="px-3 py-1 bg-blue-600 text-white rounded" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+

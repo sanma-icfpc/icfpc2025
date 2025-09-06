@@ -1,0 +1,25 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local runtime state
+logs/
+*.log
+*.sqlite*
+
+# Local secrets/config
+users.yaml
+.env
+
+# Tooling
+.python-version
+

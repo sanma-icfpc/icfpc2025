@@ -1,0 +1,38 @@
+<div id="status" class="bg-white border rounded p-3">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div>
+      <h3 class="font-semibold">Running</h3>
+      {% if running %}
+        <div class="text-sm">
+          <div>ticket: <code>{{ running.ticket }}</code></div>
+          <div>agent: {{ running.agent_name or '-' }}</div>
+          <div>problem: {{ running.problem_id }}</div>
+          <div>lease: {{ running.lease_expire_at }}</div>
+        </div>
+      {% else %}
+        <div class="text-sm text-gray-500">None</div>
+      {% endif %}
+    </div>
+    <div>
+      <h3 class="font-semibold">Queued</h3>
+      <ul class="text-sm list-disc ml-4">
+        {% for t in queued %}
+        <li><code>{{ t.ticket }}</code> | {{ t.problem_id }} | {{ t.agent_name or '-' }} | prio={{ t.effective_priority }}</li>
+        {% else %}
+        <li class="text-gray-500">None</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3 class="font-semibold">Recent</h3>
+      <ul class="text-sm list-disc ml-4">
+        {% for t in recent %}
+        <li><code>{{ t.ticket }}</code> | {{ t.status }} | {{ t.problem_id }} | {{ t.agent_name or '-' }}</li>
+        {% else %}
+        <li class="text-gray-500">None</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
