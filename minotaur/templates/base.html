@@ -6,6 +6,7 @@
   <title>Minotaur</title>
   <!-- Removed HTMX; use vanilla JS + EventSource/fetch -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/jdenticon@3.3.0/dist/jdenticon.min.js" defer></script>
   <style>
     .navbar-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
     .badge { display:inline-block; padding:2px 6px; border-radius:9999px; font-size:12px; line-height:16px; }
@@ -130,7 +131,10 @@
       statusInFlight = true;
       fetch('/minotaur/status', { credentials: 'same-origin' })
         .then(r => r.text())
-        .then(html => { el.innerHTML = (new DOMParser()).parseFromString(html, 'text/html').getElementById('status').innerHTML; })
+        .then(html => {
+          el.innerHTML = (new DOMParser()).parseFromString(html, 'text/html').getElementById('status').innerHTML;
+          updateIdenticons(el);
+        })
         .catch(() => {})
         .finally(() => { statusInFlight = false; el.scrollTop = prevScroll; restoreUIState(); updateRelativeTimes(); });
     }
@@ -143,7 +147,7 @@
     function startSSE() {
       try {
         const es = new EventSource('/minotaur/stream');
-        setSSEStatus(false);
+        setSSEStatus(true);
         es.addEventListener('open', function(_) { setSSEStatus(true); });
         es.onopen = function() { setSSEStatus(true); };
         es.addEventListener('change', function(_) { loadStatus(); updateAgentCount(); refreshPriorityStatuses(); });
@@ -154,7 +158,7 @@
       loadStatus();
       loadPriorities(true);
       updateAgentCount();
-      setSSEStatus(false);
+      setSSEStatus(true);
       startSSE();
       setInterval(updateRelativeTimes, 1000);
     });
@@ -216,7 +220,7 @@
       const url = '/minotaur/priorities' + (sort ? '?sort=1' : '');
       fetch(url, { credentials: 'same-origin' })
         .then(r => r.text())
-        .then(html => { el.innerHTML = html; })
+        .then(html => { el.innerHTML = html; updateIdenticons(el); })
         .catch(() => {});
     }
     function applyAgentPriorities(sortAfter) {
@@ -228,6 +232,16 @@
         credentials: 'same-origin'
       }).then(() => { loadPriorities(!!sortAfter); loadStatus(); })
         .catch(() => { loadPriorities(!!sortAfter); loadStatus(); });
+      return false;
+    }
+    function togglePin(name, pinned) {
+      fetch('/minotaur/priorities/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, pinned }),
+        credentials: 'same-origin'
+      }).then(() => { refreshPriorityStatuses(); })
+        .catch(() => {});
       return false;
     }
     function deleteAgentPriority(name) {
@@ -269,16 +283,22 @@
             const name = row.name;
             const prio = row.priority;
             const status = row.status;
+            const pinned = row.pinned ? 1 : 0;
             let tr = existing.get(name);
             if (!tr) {
-              // Append new row unsorted at the end, before the __new__ row
               const newRow = document.createElement('tr');
               newRow.setAttribute('data-row', '');
               newRow.setAttribute('data-name', name);
               newRow.innerHTML = `
-                <td class="p-1 font-mono truncate">${name === '*' ? '<span class="text-gray-500">(default)</span>' : name}</td>
+                <td class="p-1 font-mono truncate">
+                  <div class="flex items-center gap-2">
+                    ${name === '*' ? '' : '<div class=\'w-5 h-5 rounded-md border overflow-hidden\'><svg width=\'20\' height=\'20\' data-jdenticon-value=\'' + name + '\'></svg></div>'}
+                    ${name === '*' ? '<span class=\'text-gray-500\'>(default)</span>' : name}
+                  </div>
+                </td>
                 <td class="p-1"><span class="badge badge-${status}">${status}</span></td>
                 <td class="p-1"><input type="number" min="1" max="100" step="1" class="border rounded px-2 py-1 w-20" value="${prio}" /></td>
+                <td class="p-1">${name !== '*' ? '<button data-pin class="px-2 py-1 text-xs ' + (pinned ? 'bg-yellow-500 text-white' : 'bg-gray-200') + '" onclick="togglePin(\'' + name + '\',' + (pinned ? 0 : 1) + '); return false;">' + (pinned ? 'Unpin' : 'Pin') + '</button>' : '<span class="text-gray-400">—</span>'}</td>
                 <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteAgentPriority(\'' + name + '\'); return false;">Delete</button>' : '<span class="text-gray-400">—</span>'}</td>
                 <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent(\'' + name + '\'); return false;">Select for Next</button>' : '<span class="text-gray-400">—</span>'}</td>
               `;
@@ -286,21 +306,45 @@
               tableBody.insertBefore(newRow, newRowInput ? newRowInput : null);
               return;
             }
-            // Update badge only (avoid changing layout)
+            // Update badge
             const badge = tr.querySelector('.badge');
             if (badge) {
               badge.textContent = status;
               badge.className = `badge badge-${status}`;
             }
-            // Update priority input if not focused and not edited
+            // Update priority input if not focused
             const inp = tr.querySelector('input[type=number]');
             if (inp && document.activeElement !== inp) {
               const cur = parseInt(inp.value || '0', 10);
               if (cur !== prio) inp.value = prio;
             }
+            // Update pin button
+            let pinBtn = tr.querySelector('[data-pin]');
+            if (pinBtn && name !== '*') {
+              pinBtn.textContent = pinned ? 'Unpin' : 'Pin';
+              pinBtn.className = 'px-2 py-1 text-xs ' + (pinned ? 'bg-yellow-500 text-white' : 'bg-gray-200');
+              pinBtn.setAttribute('onclick', `togglePin('${name}', ${pinned ? 0 : 1}); return false;`);
+            }
           });
+          updateIdenticons(tableBody);
         })
         .catch(() => {});
+    }
+    function updateIdenticons(scope) {
+      const run = () => {
+        try {
+          if (typeof window.jdenticon === 'function') {
+            window.jdenticon();
+          } else if (window.jdenticon && typeof window.jdenticon.update === 'function') {
+            if (scope) window.jdenticon.update(scope); else window.jdenticon.update();
+          }
+        } catch (_) {}
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run, { once: true });
+      } else {
+        requestAnimationFrame(() => setTimeout(run, 0));
+      }
     }
     function setSSEStatus(isOnline) {
       const el = document.getElementById('sse-status');

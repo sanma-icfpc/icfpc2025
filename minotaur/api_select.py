@@ -118,13 +118,18 @@ def register_select_routes(app, ctx: AppCtx) -> None:
             try:
                 with ctx.conn:
                     running = ctx.conn.execute(
-                        "SELECT id, ticket, agent_name FROM challenges WHERE status='running' LIMIT 1"
+                        "SELECT id, ticket, agent_name, started_at FROM challenges WHERE status='running' LIMIT 1"
                     ).fetchone()
                     if running is not None and running["agent_name"] and running["agent_name"] == agent_name:
                         ctx.conn.execute(
                             "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
                             (utcnow_str(), running["id"]),
                         )
+                        try:
+                            from .sched_fair import accumulate_service
+                            accumulate_service(ctx.conn, ctx.logger, ctx.s.base_priority_default, running["agent_name"], running["started_at"], utcnow_str())
+                        except Exception:
+                            pass
                         try:
                             _log_ch_req(ctx, int(running["id"]), "event", str(uuid.uuid4()), "preempt_giveup", 0, {}, {})
                         except Exception:

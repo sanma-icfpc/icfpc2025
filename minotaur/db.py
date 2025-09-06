@@ -82,7 +82,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS agent_priorities (
               name TEXT PRIMARY KEY,
               priority INTEGER NOT NULL,
-              updated_at TEXT
+              updated_at TEXT,
+              vtime REAL NOT NULL DEFAULT 0.0,
+              service REAL NOT NULL DEFAULT 0.0,
+              pinned INTEGER NOT NULL DEFAULT 0
             );
             """
         )
@@ -90,8 +93,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
         cur = conn.execute("SELECT 1 FROM agent_priorities WHERE name='*' LIMIT 1")
         if cur.fetchone() is None:
             conn.execute(
-                "INSERT INTO agent_priorities(name, priority, updated_at) VALUES('*', 50, datetime('now'))"
+                "INSERT INTO agent_priorities(name, priority, updated_at, vtime, service, pinned) VALUES('*', 50, datetime('now'), 0.0, 0.0, 0)"
             )
+        # Migrate missing columns in existing DBs
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_priorities)").fetchall()}
+            if "vtime" not in cols:
+                conn.execute("ALTER TABLE agent_priorities ADD COLUMN vtime REAL NOT NULL DEFAULT 0.0")
+            if "service" not in cols:
+                conn.execute("ALTER TABLE agent_priorities ADD COLUMN service REAL NOT NULL DEFAULT 0.0")
+            if "pinned" not in cols:
+                conn.execute("ALTER TABLE agent_priorities ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
 
 
 def query_one(conn: sqlite3.Connection, sql: str, args: Iterable[Any] = ()) -> Optional[sqlite3.Row]:

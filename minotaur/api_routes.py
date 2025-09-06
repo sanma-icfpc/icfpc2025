@@ -10,6 +10,7 @@ from flask import jsonify, make_response, request
 
 from .context import AppCtx
 from .proxy import UpstreamError
+from .sched_fair import accumulate_service
 
 
 def utcnow_str() -> str:
@@ -108,10 +109,16 @@ def register_api_routes(app, ctx: AppCtx) -> None:
             return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
         if bool(out.get("correct")):
             with ctx.conn:
+                rr = ctx.conn.execute("SELECT id, agent_name, started_at FROM challenges WHERE status='running' LIMIT 1").fetchone()
                 ctx.conn.execute(
                     "UPDATE challenges SET status='success', finished_at=? WHERE status='running'",
                     (utcnow_str(),),
                 )
+            try:
+                if rr is not None:
+                    accumulate_service(ctx.conn, ctx.logger, ctx.s.base_priority_default, rr["agent_name"], rr["started_at"], utcnow_str())
+            except Exception:
+                pass
         _touch_lease(ctx)
         if ch_id is not None:
             _log_ch_req(ctx, ch_id, "guess", rk, "from_upstream", 200, body, out)

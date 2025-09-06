@@ -52,7 +52,9 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
         for n in names:
             pr = ctx.conn.execute("SELECT priority FROM agent_priorities WHERE name=?", (n,)).fetchone()
             p = int(pr["priority"]) if pr else _default_priority(ctx) if n != "*" else _default_priority(ctx)
-            rows.append({"name": n, "priority": p, "status": _agent_status(ctx, n) if n != "*" else "inactive"})
+            pr2 = ctx.conn.execute("SELECT pinned FROM agent_priorities WHERE name=?", (n,)).fetchone()
+            pinned = int(pr2["pinned"]) if pr2 else 0
+            rows.append({"name": n, "priority": p, "status": _agent_status(ctx, n) if n != "*" else "inactive", "pinned": pinned})
         # Ensure default row exists and is last
         if "*" not in names:
             rows.append({"name": "*", "priority": _default_priority(ctx), "status": "inactive"})
@@ -115,7 +117,32 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
         for n in names:
             pr = ctx.conn.execute("SELECT priority FROM agent_priorities WHERE name=?", (n,)).fetchone()
             p = int(pr["priority"]) if pr else _default_priority(ctx) if n != "*" else _default_priority(ctx)
-            rows.append({"name": n, "priority": p, "status": _agent_status(ctx, n) if n != "*" else "inactive"})
+            pr2 = ctx.conn.execute("SELECT pinned FROM agent_priorities WHERE name=?", (n,)).fetchone()
+            pinned = int(pr2["pinned"]) if pr2 else 0
+            rows.append({"name": n, "priority": p, "status": _agent_status(ctx, n) if n != "*" else "inactive", "pinned": pinned})
+        return jsonify({"rows": rows})
+
+    @app.route("/minotaur/priorities/pin", methods=["POST"])
+    @guard.require()
+    def ui_priorities_pin():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        pin = bool(data.get("pinned"))
+        if not name or name == "*":
+            return jsonify({"ok": False, "error": "invalid_name"}), 400
+        # Only one can be pinned
+        with ctx.conn:
+            ctx.conn.execute("UPDATE agent_priorities SET pinned=0")
+            if pin:
+                ctx.conn.execute(
+                    "INSERT INTO agent_priorities(name, priority, updated_at, vtime, service, pinned) VALUES(?, (SELECT priority FROM agent_priorities WHERE name='*'), datetime('now'), 0.0, 0.0, 1) ON CONFLICT(name) DO UPDATE SET pinned=1",
+                    (name,),
+                )
+        if ctx.coord and ctx.coord.on_change:
+            try:
+                ctx.coord.on_change("priorities_pin")
+            except Exception:
+                pass
         return jsonify({"rows": rows})
 
     @app.route("/minotaur/priorities/delete", methods=["POST"])

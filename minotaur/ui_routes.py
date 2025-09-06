@@ -6,6 +6,7 @@ from typing import Any, Dict
 from flask import Response, jsonify, make_response, render_template, request, stream_with_context
 
 from .context import AppCtx
+from .sched_fair import accumulate_service
 
 
 def _fmt_ts(ts: str) -> str:
@@ -191,7 +192,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         now = utcnow_str()
         with ctx.conn:
             cur = ctx.conn.execute(
-                "SELECT id FROM challenges WHERE status='running' LIMIT 1"
+                "SELECT id, agent_name, started_at FROM challenges WHERE status='running' LIMIT 1"
             ).fetchone()
             if cur is not None:
                 ctx.conn.execute(
@@ -202,6 +203,11 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                 "UPDATE challenges SET status='giveup', finished_at=? WHERE status='running'",
                 (now,),
             )
+        try:
+            if cur is not None:
+                accumulate_service(ctx.conn, ctx.logger, ctx.s.base_priority_default, cur["agent_name"], cur["started_at"], now)
+        except Exception:
+            pass
         if ctx.coord and ctx.coord.on_change:
             try:
                 ctx.coord.on_change("cancel")
@@ -229,4 +235,3 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             recent=recent,
             recent_flows=recent_flows_map,
         )
-
