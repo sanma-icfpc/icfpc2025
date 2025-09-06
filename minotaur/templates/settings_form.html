@@ -1,4 +1,4 @@
-<form class="space-y-3" hx-post="/minotaur/settings" hx-swap="none" hx-on::after-request="closeModal()">
+<form class="space-y-3" onsubmit="return submitSettings(event)">
   <div>
     <label class="block text-sm font-medium text-gray-800">公式ベースURL（OFFICIAL_BASE）</label>
     <input class="w-full border rounded p-2 mt-1" placeholder="例: https://example.com" type="text" name="OFFICIAL_BASE" value="{{ official_base or '' }}" />

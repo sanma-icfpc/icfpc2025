@@ -23,6 +23,20 @@
 - UI: open `http://localhost:19384/` (Basic Auth required)
 - Agents: call `/select`, `/explore`, `/guess` as in production against this server.
 
+## Notes & Decisions
+- Removed internal MOCK mode: always forward to `OFFICIAL_BASE`. For local testing, set it to your local judge URL.
+- Settings persistence: YAML only (`SETTINGS_FILE`, default `minotaur/settings.yaml`). SQLite `settings` table removed.
+- Startup reap: on boot, any lingering `running` or `queued` trials are marked as `error` and move to Recent.
+- Preemption: if the same `X-Agent-ID` issues `/select`, the previous run for that agent is force-finished and the new ticket is granted immediately.
+  Additionally, when someone is `running` and there is no other queued trial (besides the current request), the new `/select` preempts to keep flow snappy.
+- Logging: directional stdout logs with timestamps
+  - `[agent -> minotaur]`, `[agent <- minotaur]`, `[minotaur -> upstream]`, `[upstream -> minotaur]`, `[webui -> minotaur]`, `[webui <- minotaur]`.
+  - JSONL per-day logs are stored under `LOG_DIR`.
+- UI updates: switched Status auto-refresh to vanilla EventSource (SSE) + fetch
+  - We avoid HTMX SSE extension because outerHTML swaps can re-trigger `load`/`revealed` and cause extra GETs.
+  - A single SSE connection (`/minotaur/stream`) triggers `fetch('/minotaur/status')` on change events.
+- Local judge client-test now sends `X-Agent-ID: local_judge_server:<pid>` for better attribution and preemption behavior.
+
 ## Paths & Working Directory
 - All runtime files (logs, database, auth file) default to the `minotaur/` directory, regardless of the current working directory.
 - Environment variables `LOG_DIR`, `AUTH_FILE` accept absolute paths; if relative, they are resolved under `minotaur/`.

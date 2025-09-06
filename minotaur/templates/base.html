@@ -4,14 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Minotaur</title>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+  <!-- Removed HTMX; use vanilla JS + EventSource/fetch -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
     .navbar-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
   </style>
   </head>
-<body class="bg-gray-100 text-gray-900" hx-ext="sse" sse-connect="/minotaur/stream">
+<body class="bg-gray-100 text-gray-900">
   <!-- Navbar -->
   <nav class="bg-white navbar-shadow">
     <div class="max-w-5xl mx-auto px-4">
@@ -45,18 +44,65 @@
         <h3 class="font-semibold">設定</h3>
         <button class="text-gray-600" onclick="closeModal()">✕</button>
       </div>
-      <div id="modal-body" class="p-4" hx-get="/minotaur/settings" hx-trigger="revealed" hx-swap="innerHTML">
-        読み込み中…
-      </div>
+      <div id="modal-body" class="p-4">読み込み中…</div>
     </div>
   </div>
 
   <script>
+    // ----- Status auto refresh via SSE -----
+    let statusInFlight = false;
+    function loadStatus() {
+      if (statusInFlight) return;
+      const el = document.getElementById('status');
+      if (!el) return;
+      statusInFlight = true;
+      fetch('/minotaur/status', { credentials: 'same-origin' })
+        .then(r => r.text())
+        .then(html => { el.outerHTML = html; })
+        .catch(() => {})
+        .finally(() => { statusInFlight = false; });
+    }
+    function startSSE() {
+      try {
+        const es = new EventSource('/minotaur/stream');
+        es.addEventListener('change', function(_) { loadStatus(); });
+        es.onerror = function(_) { /* EventSource will auto-reconnect */ };
+      } catch (_) {}
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      loadStatus();
+      startSSE();
+    });
+
+    // ----- Modal load + submit (vanilla) -----
     function openModal() {
-      document.getElementById('modal').classList.remove('hidden');
+      const m = document.getElementById('modal');
+      m.classList.remove('hidden');
+      fetch('/minotaur/settings', { credentials: 'same-origin' })
+        .then(r => r.text())
+        .then(html => { document.getElementById('modal-body').innerHTML = html; })
+        .catch(() => { document.getElementById('modal-body').innerText = '読み込みに失敗しました'; });
     }
     function closeModal() {
       document.getElementById('modal').classList.add('hidden');
+    }
+    function submitSettings(ev) {
+      ev.preventDefault();
+      const form = ev.target;
+      const fd = new FormData(form);
+      fetch('/minotaur/settings', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(() => { closeModal(); })
+        .catch(() => { closeModal(); })
+        .finally(() => { loadStatus(); });
+      return false;
+    }
+    function cancelRunning(ev) {
+      if (ev) ev.preventDefault();
+      if (!confirm('実行中の試行を取り消します。よろしいですか？')) return false;
+      fetch('/minotaur/cancel_running', { method: 'POST', credentials: 'same-origin' })
+        .then(() => { loadStatus(); })
+        .catch(() => { loadStatus(); });
+      return false;
     }
   </script>
 </body>
