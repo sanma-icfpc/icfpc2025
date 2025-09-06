@@ -24,6 +24,7 @@ ALPHABET = "012345"  # door labels
 
 # ---------- API Client ----------
 
+
 class AedificiumClient:
     """Ædificium コンテストの各種 API を扱うクライアントクラス."""
 
@@ -119,22 +120,24 @@ class AedificiumClient:
 
 # ---------- Membership Oracle with batching & caching ----------
 
+
 class ExploreOracle:
     """
     /explore をバッチ化し、語に対する観測結果（ラベル）をキャッシュするユーティリティ。
-    
+
     For a plan w of length x, server returns a list of length x+1; we take the last
     element as g(w) (Moore state's label after executing w). The initial state's
     label is the 0-th element of any returned trace.
     """
+
     def __init__(self, client: AedificiumClient):
         """
         Args:
             client (AedificiumClient): API クライアントインスタンス。
         """
         self.client = client
-        self.trace_cache: Dict[str, List[int]] = {}    # word -> full trace (len = |w|+1)
-        self.last_label: Dict[str, int] = {}           # word -> final label
+        self.trace_cache: Dict[str, List[int]] = {}  # word -> full trace (len = |w|+1)
+        self.last_label: Dict[str, int] = {}  # word -> final label
         self.pending: List[str] = []
         self.init_label: Optional[int] = None
         self.last_query_count: int = 0
@@ -163,8 +166,13 @@ class ExploreOracle:
         plans = list(dict.fromkeys(self.pending))  # dedupe, keep order
         self.pending.clear()
         results, _qc = self.client.explore(plans)
-        if self.last_query_count_output_datetime + datetime.timedelta(seconds=1.0) < datetime.datetime.now():
-            self.last_query_count_output_datetime = datetime.datetime.now() + datetime.timedelta(seconds=1.0)
+        if (
+            self.last_query_count_output_datetime + datetime.timedelta(seconds=1.0)
+            < datetime.datetime.now()
+        ):
+            self.last_query_count_output_datetime = (
+                datetime.datetime.now() + datetime.timedelta(seconds=1.0)
+            )
             print(f"{_qc=}")
         self.last_query_count = _qc
         assert len(results) == len(plans)
@@ -219,7 +227,9 @@ class ExploreOracle:
         self.ensure(need)
         self.commit()
 
-    def predict_trace_end(self, delta, rep_for_state, start_rep: str, word: str, outputs) -> int:
+    def predict_trace_end(
+        self, delta, rep_for_state, start_rep: str, word: str, outputs
+    ) -> int:
         """
         仮説機械に基づいて、語 word の実行後に到達する状態のラベルを予測する。
 
@@ -242,22 +252,32 @@ class ExploreOracle:
 
 # ---------- L* for Moore machines ----------
 
+
 @dataclass
 class Hypothesis:
     """仮説オートマトンを表現するデータ構造."""
 
-    rows: Dict[str, Tuple[int, ...]]        # row signature for reps in S
+    rows: Dict[str, Tuple[int, ...]]  # row signature for reps in S
     state_index_of_row: Dict[Tuple[int, ...], int]
-    rep_for_state: List[str]                # representative word for each state
-    outputs: List[int]                      # Moore output per state
-    delta: List[List[int]]                  # transitions [state][door] -> state
+    rep_for_state: List[str]  # representative word for each state
+    outputs: List[int]  # Moore output per state
+    delta: List[List[int]]  # transitions [state][door] -> state
+
 
 class LStarMooreLearner:
     """
     Moore 型オートマトン用 L* 学習器。閉性／一貫性／反例検出で仮説を修正。
     """
 
-    def __init__(self, oracle: ExploreOracle, max_loops: int = 200, bfs_depth: int = 4, bfs_adoption_propbability: float = 1.0, max_random_len: int = 8, num_trials: int = 200):
+    def __init__(
+        self,
+        oracle: ExploreOracle,
+        max_loops: int = 200,
+        bfs_depth: int = 4,
+        bfs_adoption_propbability: float = 1.0,
+        max_random_len: int = 8,
+        num_trials: int = 200,
+    ):
         """
         Args:
             oracle (ExploreOracle): 観測を収集するオラクル。
@@ -269,8 +289,8 @@ class LStarMooreLearner:
         self.bfs_adoption_propbability = bfs_adoption_propbability
         self.max_random_len = max_random_len
         self.num_trials = num_trials
-        self.S: List[str] = [""]            # access prefixes
-        self.E: List[str] = [""]            # distinguishing suffixes (must contain "")
+        self.S: List[str] = [""]  # access prefixes
+        self.E: List[str] = [""]  # distinguishing suffixes (must contain "")
         # Pre-warm a tiny query to get initial label (and server wake-up)
         self.oracle.ensure({"0"})
         self.oracle.commit()
@@ -310,7 +330,9 @@ class LStarMooreLearner:
                     return ua
         return None
 
-    def find_inconsistency(self, rowS: Dict[str, Tuple[int, ...]]) -> Optional[Tuple[str, str, str]]:
+    def find_inconsistency(
+        self, rowS: Dict[str, Tuple[int, ...]]
+    ) -> Optional[Tuple[str, str, str]]:
         """
         一貫性違反を検出する。
 
@@ -368,11 +390,13 @@ class LStarMooreLearner:
                 j = idx_of_row[r_next]
                 delta[i][d] = j
 
-        return Hypothesis(rows=rows_map,
-                          state_index_of_row=idx_of_row,
-                          rep_for_state=rep_for_state,
-                          outputs=outputs,
-                          delta=delta)
+        return Hypothesis(
+            rows=rows_map,
+            state_index_of_row=idx_of_row,
+            rep_for_state=rep_for_state,
+            outputs=outputs,
+            delta=delta,
+        )
 
     def strengthen_with_counterexample(self, hyp: Hypothesis) -> bool:
         """
@@ -411,7 +435,9 @@ class LStarMooreLearner:
         self.oracle.commit()
 
         for w in tests:
-            pred = self.oracle.predict_trace_end(hyp.delta, hyp.rep_for_state, hyp.rep_for_state[0], w, hyp.outputs)
+            pred = self.oracle.predict_trace_end(
+                hyp.delta, hyp.rep_for_state, hyp.rep_for_state[0], w, hyp.outputs
+            )
             real = self.oracle.g(w)
             if pred != real:
                 # refine: add all prefixes of w to S
@@ -473,6 +499,7 @@ class LStarMooreLearner:
 
 # ---------- Build /guess JSON from hypothesis ----------
 
+
 def build_guess_from_hypothesis(hyp: Hypothesis) -> Dict:
     """
     仮説オートマトンから /guess 提出用のマップ構造を生成する。
@@ -513,21 +540,17 @@ def build_guess_from_hypothesis(hyp: Hypothesis) -> Dict:
                 # last resort: self-pair
                 partner = a if r == r2 else 0
 
-            connections.append({
-                "from": {"room": r, "door": a},
-                "to":   {"room": r2, "door": partner}
-            })
+            connections.append(
+                {"from": {"room": r, "door": a}, "to": {"room": r2, "door": partner}}
+            )
             used[r][a] = True
             used[r2][partner] = True
 
-    return {
-        "rooms": rooms,
-        "startingRoom": starting_room,
-        "connections": connections
-    }
+    return {"rooms": rooms, "startingRoom": starting_room, "connections": connections}
 
 
 # ---------- Example runner ----------
+
 
 def main():
     """
