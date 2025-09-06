@@ -4,17 +4,19 @@
   <!-- Tabs -->
   <div class="mb-4 border-b">
     <nav class="flex gap-2 -mb-px" role="tablist" aria-label="Tabs">
-      <button id="tabbtn-main" onclick="switchTab('main')" class="px-3 py-2 border-b-2 border-blue-600 text-blue-600">Main</button>
+      <button id="tabbtn-scheduler" onclick="switchTab('scheduler')" class="px-3 py-2 border-b-2 border-blue-600 text-blue-600">Scheduler</button>
+      <button id="tabbtn-challenges" onclick="switchTab('challenges')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">Challenges</button>
       <button id="tabbtn-analytics" onclick="switchTab('analytics')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">Analytics</button>
     </nav>
   </div>
 
-  <!-- Main Tab -->
-  <div id="tab-main">
-    <h2 class="font-semibold mb-2">Scheduler</h2>
+  <!-- Scheduler Tab -->
+  <div id="tab-scheduler">
     <div id="priority-pane" class="mb-4">Loading priorities…</div>
+  </div>
 
-    <h2 class="font-semibold mb-2">Challenges</h2>
+  <!-- Challenges Tab -->
+  <div id="tab-challenges" class="hidden">
     <div id="status">Loading...</div>
     <!-- content will be injected by loadStatus() via SSE or initial load -->
   </div>
@@ -27,23 +29,41 @@
 
 <script>
   let analyticsLoaded = false;
+  function updateURLTab(name) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', name);
+    try { window.history.replaceState({}, '', url.toString()); } catch (_) {}
+  }
+  function getURLTab() {
+    try { return new URL(window.location.href).searchParams.get('tab') || ''; } catch (_) { return ''; }
+  }
+  function setActiveBtn(activeId) {
+    const ids = ['tabbtn-scheduler','tabbtn-challenges','tabbtn-analytics'];
+    ids.forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      if (id === activeId) btn.className = 'px-3 py-2 border-b-2 border-blue-600 text-blue-600';
+      else btn.className = 'px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800';
+    });
+  }
   function switchTab(name) {
-    const mainBtn = document.getElementById('tabbtn-main');
-    const anaBtn = document.getElementById('tabbtn-analytics');
-    const main = document.getElementById('tab-main');
-    const ana = document.getElementById('tab-analytics');
-    if (name === 'analytics') {
-      main.classList.add('hidden');
-      ana.classList.remove('hidden');
-      mainBtn.className = 'px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800';
-      anaBtn.className = 'px-3 py-2 border-b-2 border-blue-600 text-blue-600';
+    const scheduler = document.getElementById('tab-scheduler');
+    const challenges = document.getElementById('tab-challenges');
+    const analytics = document.getElementById('tab-analytics');
+    const show = (el) => { el && el.classList.remove('hidden'); };
+    const hide = (el) => { el && el.classList.add('hidden'); };
+    if (name === 'challenges') {
+      hide(scheduler); hide(analytics); show(challenges);
+      setActiveBtn('tabbtn-challenges');
+    } else if (name === 'analytics') {
+      hide(scheduler); hide(challenges); show(analytics);
+      setActiveBtn('tabbtn-analytics');
       if (!analyticsLoaded) loadAnalytics();
-    } else {
-      ana.classList.add('hidden');
-      main.classList.remove('hidden');
-      anaBtn.className = 'px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800';
-      mainBtn.className = 'px-3 py-2 border-b-2 border-blue-600 text-blue-600';
+    } else { // default scheduler
+      hide(challenges); hide(analytics); show(scheduler);
+      setActiveBtn('tabbtn-scheduler');
     }
+    updateURLTab(name);
   }
   function loadAnalytics() {
     fetch('/minotaur/analytics', { credentials: 'same-origin' })
@@ -55,7 +75,10 @@
       })
       .catch(() => {});
   }
-  // Ensure Main is default active
-  document.addEventListener('DOMContentLoaded', function() { switchTab('main'); });
+  // Activate from URL parameter on first load
+  document.addEventListener('DOMContentLoaded', function() {
+    const tab = getURLTab() || 'scheduler';
+    switchTab(tab);
+  });
 </script>
 {% endblock %}
