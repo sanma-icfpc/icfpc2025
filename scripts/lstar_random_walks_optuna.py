@@ -52,7 +52,23 @@ def solve(
 
 
 if __name__ == "__main__":
-    problem_names = ["probatio", "primus", "secundus", "tertius", "quartus", "quintus"]
+    problem_names = [
+        "primus",
+        "secundus",
+        "tertius",
+        "quartus",
+        "quintus",
+        "aleph",
+        "beth",
+        "gimel",
+        "daleth",
+        "he",
+        "vau",
+        "zain",
+        "hhet",
+        "teth",
+        "iod"
+        ]
     threads = list()
     lock = threading.Lock()
     for problem_name in problem_names:
