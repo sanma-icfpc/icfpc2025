@@ -5,7 +5,8 @@
     {% if running %}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
         <div><span class="text-gray-500">ticket:</span> <code>{{ running.ticket }}</code></div>
-        <div><span class="text-gray-500">agent:</span> {{ running.agent_name or '-' }}</div>
+        <div><span class="text-gray-500">agent:</span> {{ running.agent_name or '-' }} <span class="text-gray-400">(id: {{ running.agent_id or '-' }})</span></div>
+        <div><span class="text-gray-500">src:</span> {{ running.source_ip or '-' }}</div>
         <div><span class="text-gray-500">problem:</span> {{ running.problem_id }}</div>
         <div><span class="text-gray-500">lease:</span> {{ running.lease_expire_at }}</div>
       </div>
@@ -15,8 +16,18 @@
       <div class="mt-3">
         <h4 class="font-semibold text-sm mb-1">Requests</h4>
         <div class="text-xs bg-gray-50 border rounded p-2 max-h-64 overflow-auto">
-          {% for r in running_reqs %}
-            <div><span class="text-gray-500">{{ r.ts }}</span> — {{ r.kind }} ({{ r.status_code }})</div>
+          {% for f in running_flows %}
+            <div class="py-1 cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
+              <span class="text-gray-500">{{ f.tstr }}</span>
+              <span class="ml-2 font-mono">{{ f.api }}</span>
+              <span class="ml-2">
+                <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
+                → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
+                → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
+                → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+              </span>
+            </div>
+            <div class="hidden pl-4 text-gray-600">詳細はログ（JSONL）をご確認ください。</div>
           {% else %}
             <div class="text-gray-400">No requests yet.</div>
           {% endfor %}
@@ -37,15 +48,26 @@
           <div class="flex items-center justify-between">
             <div class="truncate">
               <div><span class="text-gray-500">ticket:</span> <code>{{ t.ticket }}</code></div>
-              <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }}</div>
+              <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span></div>
+              <div><span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}</div>
               <div><span class="text-gray-500">problem:</span> {{ t.problem_id }}</div>
             </div>
             <div class="text-xs text-gray-600">prio {{ t.effective_priority }}</div>
           </div>
           <div class="mt-2 text-xs bg-gray-50 border rounded p-2">
-            {% set reqs = queued_reqs.get(t.id) %}
-            {% for r in reqs %}
-              <div><span class="text-gray-500">{{ r.ts }}</span> — {{ r.kind }} ({{ r.status_code }})</div>
+            {% set flows = queued_flows.get(t.id) %}
+            {% for f in flows %}
+              <div class="py-1 cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <span class="text-gray-500">{{ f.tstr }}</span>
+                <span class="ml-2 font-mono">{{ f.api }}</span>
+                <span class="ml-2">
+                  <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
+                  → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
+                  → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
+                  → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                </span>
+              </div>
+              <div class="hidden pl-4 text-gray-600">詳細はログ（JSONL）をご確認ください。</div>
             {% else %}
               <div class="text-gray-400">No requests yet.</div>
             {% endfor %}
@@ -73,13 +95,24 @@
                   <div><span class="text-gray-500">ticket:</span> <code>{{ t.ticket }}</code></div>
                   <div><span class="text-gray-500">status:</span> {{ t.status }}</div>
                   <div><span class="text-gray-500">problem:</span> {{ t.problem_id }}</div>
-                  <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }}</div>
+                  <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span></div>
+                  <div><span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}</div>
                 </div>
               </div>
               <div class="mt-2 text-xs bg-gray-50 border rounded p-2">
-                {% set reqs = recent_reqs.get(t.id) %}
-                {% for r in reqs %}
-                  <div><span class="text-gray-500">{{ r.ts }}</span> — {{ r.kind }} ({{ r.status_code }})</div>
+                {% set flows = recent_flows.get(t.id) %}
+                {% for f in flows %}
+                  <div class="py-1 cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                    <span class="text-gray-500">{{ f.tstr }}</span>
+                    <span class="ml-2 font-mono">{{ f.api }}</span>
+                    <span class="ml-2">
+                      <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
+                      → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
+                      → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
+                      → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                    </span>
+                  </div>
+                  <div class="hidden pl-4 text-gray-600">詳細はログ（JSONL）をご確認ください。</div>
                 {% else %}
                   <div class="text-gray-400">No requests.</div>
                 {% endfor %}

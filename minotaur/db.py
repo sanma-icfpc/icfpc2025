@@ -33,7 +33,9 @@ def init_schema(conn: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS challenges (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               ticket TEXT UNIQUE,
+              agent_id TEXT,
               agent_name TEXT,
+              source_ip TEXT,
               git_sha TEXT,
               problem_id TEXT,
               status TEXT,
@@ -57,13 +59,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uniq_single_running_chal ON challenges(status) WHERE status='running';"
         )
-        # Per-request log within a challenge
+        # Per-request log within a challenge (phased flow)
+        conn.execute("DROP TABLE IF EXISTS challenge_requests;")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS challenge_requests (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               challenge_id INTEGER NOT NULL,
-              kind TEXT,
+              api TEXT,
+              req_key TEXT,
+              phase TEXT,
               status_code INTEGER,
               req_body TEXT,
               res_body TEXT,

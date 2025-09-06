@@ -212,13 +212,42 @@ def ui_status():
     running = dbm.query_one(conn, "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1")
     queued = dbm.query_all(conn, "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
     recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
-    # Attach requests per card
-    def reqs(ch_id: int):
-        return dbm.query_all(conn, "SELECT kind, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
-    running_reqs = reqs(running["id"]) if running else []
-    queued_reqs_map = {c["id"]: reqs(c["id"]) for c in queued}
-    recent_reqs_map = {c["id"]: reqs(c["id"]) for c in recent}
-    return render_template("status.html", running=running, running_reqs=running_reqs, queued=queued, queued_reqs=queued_reqs_map, recent=recent, recent_reqs=recent_reqs_map)
+    # Build per-request flows grouped by req_key
+    def fmt_ts(ts: str) -> str:
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            disp = dt.strftime("%Y/%m/%d %H:%M:%S")
+            delta = datetime.now(timezone.utc) - dt.astimezone(timezone.utc)
+            sec = int(delta.total_seconds())
+            if sec < 60:
+                rel = f"{sec}秒前"
+            elif sec < 3600:
+                rel = f"{sec//60}分前"
+            else:
+                rel = f"{sec//3600}時間前"
+            return f"{disp} ({rel})"
+        except Exception:
+            return ts
+
+    def flows(ch_id: int):
+        rows = dbm.query_all(conn, "SELECT api, req_key, phase, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
+        d = {}
+        for r in rows:
+            key = r["req_key"] or f"{r['api']}-{r['ts']}"
+            item = d.get(key)
+            if not item:
+                item = {"api": r["api"], "phases": set(), "ts": r["ts"], "tstr": fmt_ts(r["ts"]) }
+                d[key] = item
+            item["phases"].add(r["phase"])  # phases: agent_in,to_upstream,from_upstream,agent_out
+        # sort by ts
+        out = list(d.values())
+        out.sort(key=lambda x: x["ts"])  # oldest first
+        return out
+
+    running_flows = flows(running["id"]) if running else []
+    queued_flows_map = {c["id"]: flows(c["id"]) for c in queued}
+    recent_flows_map = {c["id"]: flows(c["id"]) for c in recent}
+    return render_template("status.html", running=running, running_flows=running_flows, queued=queued, queued_flows=queued_flows_map, recent=recent, recent_flows=recent_flows_map)
 
 
 @app.route("/minotaur/settings", methods=["GET", "POST"])
@@ -285,7 +314,10 @@ def ui_cancel_running():
         # identify running challenge to add event log
         cur = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
         if cur is not None:
-            conn.execute("INSERT INTO challenge_requests(challenge_id, kind, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?)", (int(cur["id"]), "cancel", 0, "{}", "{}", now))
+            conn.execute(
+                "INSERT INTO challenge_requests(challenge_id, api, req_key, phase, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?,?,?)",
+                (int(cur["id"]), "event", str(uuid.uuid4()), "cancel", 0, "{}", "{}", now),
+            )
         conn.execute("UPDATE challenges SET status='giveup', finished_at=? WHERE status='running'", (now,))
     # nudge scheduler to grant next
     _grant_waiting_if_idle()
@@ -294,12 +326,38 @@ def ui_cancel_running():
     running = dbm.query_one(conn, "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1")
     queued = dbm.query_all(conn, "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20")
     recent = dbm.query_all(conn, "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error') ORDER BY finished_at DESC LIMIT 20")
-    def reqs(ch_id: int):
-        return dbm.query_all(conn, "SELECT kind, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
-    running_reqs = reqs(running["id"]) if running else []
-    queued_reqs_map = {c["id"]: reqs(c["id"]) for c in queued}
-    recent_reqs_map = {c["id"]: reqs(c["id"]) for c in recent}
-    return render_template("status.html", running=running, running_reqs=running_reqs, queued=queued, queued_reqs=queued_reqs_map, recent=recent, recent_reqs=recent_reqs_map)
+    def fmt_ts(ts: str) -> str:
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            disp = dt.strftime("%Y/%m/%d %H:%M:%S")
+            delta = datetime.now(timezone.utc) - dt.astimezone(timezone.utc)
+            sec = int(delta.total_seconds())
+            if sec < 60:
+                rel = f"{sec}秒前"
+            elif sec < 3600:
+                rel = f"{sec//60}分前"
+            else:
+                rel = f"{sec//3600}時間前"
+            return f"{disp} ({rel})"
+        except Exception:
+            return ts
+    def flows(ch_id: int):
+        rows = dbm.query_all(conn, "SELECT api, req_key, phase, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
+        d = {}
+        for r in rows:
+            key = r["req_key"] or f"{r['api']}-{r['ts']}"
+            item = d.get(key)
+            if not item:
+                item = {"api": r["api"], "phases": set(), "ts": r["ts"], "tstr": fmt_ts(r["ts"]) }
+                d[key] = item
+            item["phases"].add(r["phase"])  # phases: agent_in,to_upstream,from_upstream,agent_out
+        out = list(d.values())
+        out.sort(key=lambda x: x["ts"])  # oldest first
+        return out
+    running_flows = flows(running["id"]) if running else []
+    queued_flows = {c["id"]: flows(c["id"]) for c in queued}
+    recent_flows = {c["id"]: flows(c["id"]) for c in recent}
+    return render_template("status.html", running=running, running_flows=running_flows, queued=queued, queued_flows=queued_flows, recent=recent, recent_flows=recent_flows)
 
 
 @app.route("/minotaur/healthz")
@@ -312,11 +370,11 @@ def healthz():
 
 
 # ========== Transparent API ==========
-def _log_ch_req(ch_id: int, kind: str, status_code: int, req_obj: Dict[str, Any], res_obj: Dict[str, Any]) -> None:
+def _log_ch_req(ch_id: int, api: str, req_key: str, phase: str, status_code: int, req_obj: Dict[str, Any], res_obj: Dict[str, Any]) -> None:
     try:
         conn.execute(
-            "INSERT INTO challenge_requests(challenge_id, kind, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?)",
-            (int(ch_id), kind, int(status_code), json.dumps(req_obj, ensure_ascii=False), json.dumps(res_obj, ensure_ascii=False), utcnow_str()),
+            "INSERT INTO challenge_requests(challenge_id, api, req_key, phase, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?,?,?)",
+            (int(ch_id), api, req_key, phase, int(status_code), json.dumps(req_obj, ensure_ascii=False), json.dumps(res_obj, ensure_ascii=False), utcnow_str()),
         )
     except Exception:
         pass
@@ -328,7 +386,7 @@ def select_route():
         return jsonify({"error": "problemName required"}), 400
 
     agent_id = request.headers.get("X-Agent-ID") or None
-    agent_name = agent_id  # store as agent_name for now
+    agent_name = request.headers.get("X-Agent-Name") or None
     git_sha = request.headers.get("X-Agent-Git") or None
     try:
         _log(f"[agent] /select agent_id={agent_id or '-'} git={git_sha or '-'} problem={problem}")
@@ -341,13 +399,14 @@ def select_route():
     eff = base_prio
     with conn:
         conn.execute(
-            "INSERT INTO challenges(ticket, problem_id, agent_name, git_sha, base_priority, effective_priority, status, enqueued_at) VALUES(?,?,?,?,?,?,?,?)",
-            (ticket, problem, agent_name, git_sha, base_prio, eff, "queued", enq),
+            "INSERT INTO challenges(ticket, problem_id, agent_id, agent_name, source_ip, git_sha, base_priority, effective_priority, status, enqueued_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (ticket, problem, agent_id, agent_name, request.remote_addr or "-", git_sha, base_prio, eff, "queued", enq),
         )
     ch = dbm.query_one(conn, "SELECT id FROM challenges WHERE ticket=?", (ticket,))
     ch_id = int(ch["id"]) if ch else None
     if ch_id is not None:
-        _log_ch_req(ch_id, "enqueue", 0, {"problemName": problem}, {})
+        rk0 = str(uuid.uuid4())
+        _log_ch_req(ch_id, "select", rk0, "agent_in", 0, {"problemName": problem}, {})
     try:
         qn = dbm.query_one(conn, "SELECT COUNT(1) AS n FROM challenges WHERE status='queued'")
         _log(f"[agent] enqueued ticket={ticket} queued={int(qn['n']) if qn else 0}")
@@ -361,7 +420,9 @@ def select_route():
         preempt_grant = False
         try:
             with dbm.tx(conn):
-                running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' AND agent_name=? LIMIT 1", (agent_name,))
+                running = None
+                if agent_name is not None and agent_id is not None:
+                    running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' AND agent_name=? AND agent_id=? LIMIT 1", (agent_name, agent_id))
                 if running is not None:
                     # Force-terminate the running trial for this agent
                     conn.execute(
@@ -369,7 +430,7 @@ def select_route():
                         (utcnow_str(), running["id"]),
                     )
                     try:
-                        _log_ch_req(int(running["id"]), "preempt_giveup", 0, {}, {})
+                        _log_ch_req(int(running["id"]), "event", str(uuid.uuid4()), "preempt_giveup", 0, {}, {})
                     except Exception:
                         pass
                     preempt_giveup = True
@@ -418,7 +479,7 @@ def select_route():
                     (utcnow_str(), running["id"]),
                 )
                 try:
-                    _log_ch_req(int(running["id"]), "preempt_giveup", 0, {}, {})
+                    _log_ch_req(int(running["id"]), "event", str(uuid.uuid4()), "preempt_giveup", 0, {}, {})
                 except Exception:
                     pass
                 did_giveup = True
@@ -460,6 +521,12 @@ def select_route():
         return make_response((jsonify({"status": "queued", "ticket": ticket}), 202))
 
     # Forward upstream select now that we are granted
+    if ch_id is not None:
+        try:
+            rk
+        except NameError:
+            rk = str(uuid.uuid4())
+        _log_ch_req(ch_id, "select", rk, "to_upstream", 0, {"problemName": problem}, {})
     try:
         out = proxy.forward("/select", started, {"problemName": problem, "id": "ignored"}, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
@@ -468,8 +535,8 @@ def select_route():
                 "UPDATE challenges SET status='error', finished_at=? WHERE ticket=?",
                 (utcnow_str(), ticket),
             )
-        if ch_id is not None:
-            _log_ch_req(ch_id, "select", int(ue.status), {"problemName": problem}, ue.payload)
+    if ch_id is not None:
+        _log_ch_req(ch_id, "select", rk, "from_upstream", int(ue.status), {"problemName": problem}, ue.payload)
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
 
     # success: set lease and return upstream response
@@ -477,7 +544,8 @@ def select_route():
     with conn:
         conn.execute("UPDATE challenges SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
     if ch_id is not None:
-        _log_ch_req(ch_id, "select", 200, {"problemName": problem}, out)
+        _log_ch_req(ch_id, "select", rk, "from_upstream", 200, {"problemName": problem}, out)
+        _log_ch_req(ch_id, "select", rk, "agent_out", 200, {"problemName": problem}, out)
     _log(f"[agent] granted ticket={ticket} sid={started} lease={lease}")
     return make_response(jsonify(out))
 
@@ -501,10 +569,18 @@ def explore_route():
     sid = _current_running_session()
     if not sid:
         return jsonify({"error": "no active session"}), 409
-    state = {"query_count": (dbm.query_one(conn, "SELECT upstream_query_count FROM trials WHERE status='running'") or {"upstream_query_count": 0})["upstream_query_count"]}
+    state = {"query_count": (dbm.query_one(conn, "SELECT upstream_query_count FROM challenges WHERE status='running'") or {"upstream_query_count": 0})["upstream_query_count"]}
+    rk = str(uuid.uuid4())
+    cur = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
+    ch_id = int(cur["id"]) if cur else None
+    if ch_id is not None:
+        _log_ch_req(ch_id, "explore", rk, "agent_in", 0, body, {})
+        _log_ch_req(ch_id, "explore", rk, "to_upstream", 0, body, {})
     try:
         out = proxy.forward("/explore", sid, body, state, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
+        if ch_id is not None:
+            _log_ch_req(ch_id, "explore", rk, "from_upstream", int(ue.status), body, ue.payload)
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
     # update qc and lease
     with conn:
@@ -515,10 +591,9 @@ def explore_route():
         _log(f"[agent] /explore agent_id={agent_id or '-'} sid={sid} plans={len(plans)} qc->{int(out.get('queryCount',0))}")
     except Exception:
         pass
-    # log request under current running challenge
-    cur = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
-    if cur is not None:
-        _log_ch_req(int(cur["id"]), "explore", 200, body, out)
+    if ch_id is not None:
+        _log_ch_req(ch_id, "explore", rk, "from_upstream", 200, body, out)
+        _log_ch_req(ch_id, "explore", rk, "agent_out", 200, body, out)
     _bus.emit("explore")
     return jsonify(out)
 
@@ -531,9 +606,17 @@ def guess_route():
     sid = _current_running_session()
     if not sid:
         return jsonify({"error": "no active session"}), 409
+    rk = str(uuid.uuid4())
+    cur = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
+    ch_id = int(cur["id"]) if cur else None
+    if ch_id is not None:
+        _log_ch_req(ch_id, "guess", rk, "agent_in", 0, body, {})
+        _log_ch_req(ch_id, "guess", rk, "to_upstream", 0, body, {})
     try:
         out = proxy.forward("/guess", sid, body, meta={"agent_id": agent_id, "git_sha": git_sha})
     except UpstreamError as ue:
+        if ch_id is not None:
+            _log_ch_req(ch_id, "guess", rk, "from_upstream", int(ue.status), body, ue.payload)
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
     running_id_row = dbm.query_one(conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
     if bool(out.get("correct")):
@@ -544,8 +627,9 @@ def guess_route():
             )
     _touch_lease()
     _log(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}")
-    if running_id_row is not None:
-        _log_ch_req(int(running_id_row["id"]), "guess", 200, body, out)
+    if ch_id is not None:
+        _log_ch_req(ch_id, "guess", rk, "from_upstream", 200, body, out)
+        _log_ch_req(ch_id, "guess", rk, "agent_out", 200, body, out)
     _bus.emit("guess")
     return jsonify(out)
 

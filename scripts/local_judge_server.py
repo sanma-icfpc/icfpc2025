@@ -547,6 +547,7 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", help="Enable HTTP payload logs (off by default)")
     parser.add_argument("--client-test", nargs="?", const="127.0.0.1:8009", metavar="HOST:PORT", help="Run as client tester (default: 127.0.0.1:8009)")
     parser.add_argument("--delay-ms", type=int, default=0, help="Delay between client-test requests in milliseconds (default: 0)")
+    parser.add_argument("--timeout-ms", type=int, default=600_000, help="Client-test HTTP timeout in milliseconds (default: 600000 = 10 minutes)")
     rng_group = parser.add_mutually_exclusive_group()
     rng_group.add_argument("--rng-fixed", action="store_true", help="Use fixed RNG seed by default (default)")
     rng_group.add_argument("--rng-random", action="store_true", help="Use true randomness by default")
@@ -570,12 +571,14 @@ if __name__ == "__main__":
 
         import http.client
         import os as _os
-        _AGENT_ID = f"local_judge_server:{_os.getpid()}"
+        _AGENT_ID = str(_os.getpid())
+        _AGENT_NAME = "local_judge_server_client"
         _DELAY_SEC = max(0, int(args.delay_ms)) / 1000.0
+        _TIMEOUT_SEC = max(1, int(args.timeout_ms)) / 1000.0
 
         def post_json(path: str, obj: Dict):
             body = json.dumps(obj)
-            conn = http.client.HTTPConnection(target_host, target_port, timeout=10)
+            conn = http.client.HTTPConnection(target_host, target_port, timeout=_TIMEOUT_SEC)
             conn.request(
                 "POST",
                 path,
@@ -583,6 +586,7 @@ if __name__ == "__main__":
                 headers={
                     "Content-Type": "application/json",
                     "X-Agent-ID": _AGENT_ID,
+                    "X-Agent-Name": _AGENT_NAME,
                 },
             )
             resp = conn.getresponse()
