@@ -4,10 +4,12 @@
   <!-- Tabs -->
   <div class="mb-4 border-b">
     <nav class="flex gap-2 -mb-px" role="tablist" aria-label="Tabs">
-      <button id="tabbtn-scheduler" onclick="switchTab('scheduler')" class="px-3 py-2 border-b-2 border-blue-600 text-blue-600">Scheduler</button>
-      <button id="tabbtn-challenges" onclick="switchTab('challenges')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">Challenges</button>
-      <button id="tabbtn-analytics" onclick="switchTab('analytics')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">Analytics</button>
-      <button id="tabbtn-admin" onclick="switchTab('admin')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">Admin</button>
+      <button id="tabbtn-scheduler" onclick="switchTab('scheduler')" class="px-3 py-2 border-b-2 border-blue-600 text-blue-600">⚖️ Scheduler</button>
+      <button id="tabbtn-running" onclick="switchTab('running')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">🏃 Running Agents</button>
+      <button id="tabbtn-queued" onclick="switchTab('queued')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">⏳ Queued Agents</button>
+      <button id="tabbtn-recent" onclick="switchTab('recent')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">📜 Recent Challenges</button>
+      <button id="tabbtn-analytics" onclick="switchTab('analytics')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">📊Analytics</button>
+      <button id="tabbtn-admin" onclick="switchTab('admin')" class="px-3 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-800">🛡️ Admin</button>
     </nav>
   </div>
 
@@ -16,10 +18,19 @@
     <div id="priority-pane" class="mb-4">Loading priorities…</div>
   </div>
 
-  <!-- Challenges Tab -->
-  <div id="tab-challenges" class="hidden">
-    <div id="status">Loading...</div>
-    <!-- content will be injected by loadStatus() via SSE or initial load -->
+  <!-- Running Agents Tab -->
+  <div id="tab-running" class="hidden">
+    <div id="running-pane">Loading…</div>
+  </div>
+
+  <!-- Queued Agents Tab -->
+  <div id="tab-queued" class="hidden">
+    <div id="queued-pane">Loading…</div>
+  </div>
+
+  <!-- Recent Challenges Tab -->
+  <div id="tab-recent" class="hidden">
+    <div id="recent-pane">Loading…</div>
   </div>
 
   <!-- Analytics Tab -->
@@ -57,7 +68,7 @@
     try { return new URL(window.location.href).searchParams.get('tab') || ''; } catch (_) { return ''; }
   }
   function setActiveBtn(activeId) {
-    const ids = ['tabbtn-scheduler','tabbtn-challenges','tabbtn-analytics','tabbtn-admin'];
+    const ids = ['tabbtn-scheduler','tabbtn-running','tabbtn-queued','tabbtn-recent','tabbtn-analytics','tabbtn-admin'];
     ids.forEach(id => {
       const btn = document.getElementById(id);
       if (!btn) return;
@@ -67,23 +78,31 @@
   }
   function switchTab(name) {
     const scheduler = document.getElementById('tab-scheduler');
-    const challenges = document.getElementById('tab-challenges');
+    const running = document.getElementById('tab-running');
+    const queued = document.getElementById('tab-queued');
+    const recent = document.getElementById('tab-recent');
     const analytics = document.getElementById('tab-analytics');
     const admin = document.getElementById('tab-admin');
     const show = (el) => { el && el.classList.remove('hidden'); };
     const hide = (el) => { el && el.classList.add('hidden'); };
-    if (name === 'challenges') {
-      hide(scheduler); hide(analytics); hide(admin); show(challenges);
-      setActiveBtn('tabbtn-challenges');
+    if (name === 'running') {
+      hide(queued); hide(recent); hide(scheduler); hide(analytics); hide(admin); show(running);
+      setActiveBtn('tabbtn-running');
+    } else if (name === 'queued') {
+      hide(running); hide(recent); hide(scheduler); hide(analytics); hide(admin); show(queued);
+      setActiveBtn('tabbtn-queued');
+    } else if (name === 'recent') {
+      hide(running); hide(queued); hide(scheduler); hide(analytics); hide(admin); show(recent);
+      setActiveBtn('tabbtn-recent');
     } else if (name === 'analytics') {
-      hide(scheduler); hide(challenges); hide(admin); show(analytics);
+      hide(running); hide(queued); hide(recent); hide(scheduler); hide(admin); show(analytics);
       setActiveBtn('tabbtn-analytics');
       if (!analyticsLoaded) loadAnalytics();
     } else if (name === 'admin') {
-      hide(scheduler); hide(challenges); hide(analytics); show(admin);
+      hide(running); hide(queued); hide(recent); hide(scheduler); hide(analytics); show(admin);
       setActiveBtn('tabbtn-admin');
     } else { // default scheduler
-      hide(challenges); hide(analytics); hide(admin); show(scheduler);
+      hide(running); hide(queued); hide(recent); hide(analytics); hide(admin); show(scheduler);
       setActiveBtn('tabbtn-scheduler');
     }
     updateURLTab(name);

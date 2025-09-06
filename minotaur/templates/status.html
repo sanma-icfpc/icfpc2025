@@ -1,6 +1,6 @@
 <div id="status" class="space-y-6">
   <!-- Running Card -->
-  <div class="bg-white border rounded p-4 relative">
+  <div id="section-running" class="bg-white border rounded p-4 relative">
     <h3 class="font-semibold mb-2">Running</h3>
     {% if running %}
       <div class="absolute top-2 right-2">
@@ -66,7 +66,7 @@
   </div>
 
   <!-- Queued Cards -->
-  <div class="bg-white border rounded p-4">
+  <div id="section-queued" class="bg-white border rounded p-4">
     <h3 class="font-semibold mb-2">Queued</h3>
     {% if queued %}
       <div class="grid grid-cols-1 gap-2">
@@ -130,7 +130,7 @@
   </div>
 
   <!-- Recent Cards (Collapsible) -->
-  <div class="bg-white border rounded p-4">
+  <div id="section-recent" class="bg-white border rounded p-4">
     {% set rc = recent|length %}
     <details>
       <summary class="cursor-pointer select-none"><span class="font-semibold">Recent</span> <span class="text-gray-500 text-sm">({{ rc }})</span></summary>

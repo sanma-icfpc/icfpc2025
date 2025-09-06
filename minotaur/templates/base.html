@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Minotaur</title>
+  <title>minotaur - ICFPC2025 Proxy & Scheduler</title>
   <!-- Removed HTMX; use vanilla JS + EventSource/fetch -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/jdenticon@3.3.0/dist/jdenticon.min.js" defer></script>
@@ -38,7 +38,7 @@
           <div class="text-sm text-gray-700">
             <span class="font-semibold lowercase tracking-wide">minotaur</span>
             <span class="mx-1 text-gray-400">—</span>
-            <span class="">Proxy & Scheduler</span>
+            <span class="">ICFPC2025 Proxy & Scheduler</span>
           </div>
         </div>
         <div class="text-sm text-gray-600 flex items-center space-x-2">
@@ -81,20 +81,20 @@
     function captureUIState() {
       // Expanded flow rows
       expandedKeys.clear();
-      document.querySelectorAll('#status .flow-row.expanded').forEach(el => {
+      document.querySelectorAll('#running-pane .flow-row.expanded, #queued-pane .flow-row.expanded, #recent-pane .flow-row.expanded').forEach(el => {
         const k = el.getAttribute('data-key');
         if (k) expandedKeys.add(k);
       });
       // Open <details>
       detailsOpenIdx = [];
-      const allDetails = Array.from(document.querySelectorAll('#status details'));
+      const allDetails = Array.from(document.querySelectorAll('#running-pane details, #queued-pane details, #recent-pane details'));
       allDetails.forEach((d, i) => { if (d.open) detailsOpenIdx.push(i); });
       // Inner scrollable containers
-      innerScrollTops = Array.from(document.querySelectorAll('#status .overflow-auto, #status .overflow-y-auto')).map(el => el.scrollTop);
+      innerScrollTops = Array.from(document.querySelectorAll('#running-pane .overflow-auto, #running-pane .overflow-y-auto, #queued-pane .overflow-auto, #queued-pane .overflow-y-auto, #recent-pane .overflow-auto, #recent-pane .overflow-y-auto')).map(el => el.scrollTop);
     }
     function restoreUIState() {
       // Expanded flow rows
-      document.querySelectorAll('#status .flow-row').forEach(el => {
+      document.querySelectorAll('#running-pane .flow-row, #queued-pane .flow-row, #recent-pane .flow-row').forEach(el => {
         const k = el.getAttribute('data-key');
         if (k && expandedKeys.has(k)) {
           el.classList.add('expanded');
@@ -103,17 +103,17 @@
         }
       });
       // Open <details>
-      const allDetails = Array.from(document.querySelectorAll('#status details'));
+      const allDetails = Array.from(document.querySelectorAll('#running-pane details, #queued-pane details, #recent-pane details'));
       detailsOpenIdx.forEach(i => { if (allDetails[i]) allDetails[i].open = true; });
       // Restore inner scrolls
-      const inner = Array.from(document.querySelectorAll('#status .overflow-auto, #status .overflow-y-auto'));
+      const inner = Array.from(document.querySelectorAll('#running-pane .overflow-auto, #running-pane .overflow-y-auto, #queued-pane .overflow-auto, #queued-pane .overflow-y-auto, #recent-pane .overflow-auto, #recent-pane .overflow-y-auto'));
       for (let i = 0; i < inner.length && i < innerScrollTops.length; i++) {
         try { inner[i].scrollTop = innerScrollTops[i]; } catch (_) {}
       }
     }
     function updateRelativeTimes() {
       const now = Date.now();
-      document.querySelectorAll('#status .rt').forEach(el => {
+      document.querySelectorAll('#running-pane .rt, #queued-pane .rt, #recent-pane .rt').forEach(el => {
         const ts = el.getAttribute('data-ts');
         if (!ts) return;
         try {
@@ -135,19 +135,29 @@
     }
     function loadStatus() {
       if (statusInFlight) return;
-      const el = document.getElementById('status');
-      if (!el) return;
-      const prevScroll = el.scrollTop;
+      const rPane = document.getElementById('running-pane');
+      const qPane = document.getElementById('queued-pane');
+      const rcPane = document.getElementById('recent-pane');
+      if (!rPane || !qPane || !rcPane) return;
+      const prevScrolls = [rPane.scrollTop, qPane.scrollTop, rcPane.scrollTop];
       captureUIState();
       statusInFlight = true;
       fetch('/minotaur/status', { credentials: 'same-origin' })
         .then(r => r.text())
         .then(html => {
-          el.innerHTML = (new DOMParser()).parseFromString(html, 'text/html').getElementById('status').innerHTML;
-          updateIdenticons(el);
+          const doc = (new DOMParser()).parseFromString(html, 'text/html');
+          const root = doc.getElementById('status');
+          if (!root) return;
+          const secRun = root.querySelector('#section-running');
+          const secQue = root.querySelector('#section-queued');
+          const secRec = root.querySelector('#section-recent');
+          if (secRun) rPane.innerHTML = secRun.outerHTML; else rPane.textContent = '—';
+          if (secQue) qPane.innerHTML = secQue.outerHTML; else qPane.textContent = '—';
+          if (secRec) rcPane.innerHTML = secRec.outerHTML; else rcPane.textContent = '—';
+          updateIdenticons(rPane); updateIdenticons(qPane); updateIdenticons(rcPane);
         })
         .catch(() => {})
-        .finally(() => { statusInFlight = false; el.scrollTop = prevScroll; restoreUIState(); updateRelativeTimes(); });
+        .finally(() => { statusInFlight = false; [rPane,qPane,rcPane].forEach((el,i)=>{ try{ el.scrollTop = prevScrolls[i]; }catch(_){}}); restoreUIState(); updateRelativeTimes(); });
     }
     function updateAgentCount() {
       fetch('/minotaur/agent_count', { credentials: 'same-origin' })
