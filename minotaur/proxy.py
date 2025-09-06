@@ -62,7 +62,7 @@ class UpstreamProxy:
         try:
             aid = (meta or {}).get("agent_id")
             git = (meta or {}).get("git_sha")
-            print(f"[minotaur -> upstream] POST {url} sid={session_id} agent_id={aid or '-'} git={git or '-'} body={body2}", flush=True)
+            print(f"[{_ts()}] [minotaur -> upstream] POST {url} sid={session_id} agent_id={aid or '-'} git={git or '-'} body={body2}", flush=True)
         except Exception:
             pass
         resp = sess.post(url, json=body2, timeout=timeout)
@@ -72,7 +72,7 @@ class UpstreamProxy:
         except Exception:
             data = {"_raw": text}
         try:
-            print(f"[upstream -> minotaur] {path} {resp.status_code} body={data}", flush=True)
+            print(f"[{_ts()}] [upstream -> minotaur] {path} {resp.status_code} body={data}", flush=True)
         except Exception:
             pass
         self._log("fwd" if resp.ok else "fwd_err", path, session_id, resp.status_code, body2, data, meta)
@@ -86,3 +86,5 @@ class UpstreamError(Exception):
         super().__init__(f"upstream {status}")
         self.status = status
         self.payload = payload
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

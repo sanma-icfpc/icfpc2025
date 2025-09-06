@@ -30,6 +30,12 @@ def utcnow_str() -> str:
 
 app = Flask(__name__)
 s: Settings = load_settings_from_env()
+
+def _ts() -> str:
+    return utcnow_str()
+
+def _log(msg: str) -> None:
+    print(f"[{_ts()}] {msg}", flush=True)
 # Apply persisted YAML settings (if present)
 persist = load_persisted_settings(s.settings_file)
 if persist:
@@ -40,10 +46,10 @@ if persist:
             s.trial_ttl_sec = int(persist.get("TRIAL_TTL_SEC", s.trial_ttl_sec))
         if "LOG_DIR" in persist:
             s.log_dir = resolve_under_base(persist.get("LOG_DIR") or s.log_dir)
-        print(f"[boot] loaded settings from YAML {s.settings_file}: keys={list(persist.keys())}", flush=True)
+        _log(f"[boot] loaded settings from YAML {s.settings_file}: keys={list(persist.keys())}")
     except Exception:
-        print(f"[boot] failed to apply YAML settings from {s.settings_file}", flush=True)
-print(f"[boot] db_path={s.db_path} log_dir={s.log_dir} official_base={s.official_base or '<unset>'}", flush=True)
+        _log(f"[boot] failed to apply YAML settings from {s.settings_file}")
+_log(f"[boot] db_path={s.db_path} log_dir={s.log_dir} official_base={s.official_base or '<unset>'}")
 conn = dbm.get_conn(s.db_path)
 dbm.init_schema(conn)
 # On boot, mark lingering running/queued as error (move to recent)
@@ -51,7 +57,7 @@ try:
     now = utcnow_str()
     with conn:
         conn.execute("UPDATE trials SET status='error', finished_at=? WHERE status IN ('running','queued')", (now,))
-    print("[boot] reaped lingering trials: running/queued -> error", flush=True)
+    _log("[boot] reaped lingering trials: running/queued -> error")
 except Exception:
     pass
 logger = JsonlLogger(s.log_dir)
@@ -59,7 +65,7 @@ proxy = UpstreamProxy(s, logger)
 coord = Coordinator(s, conn)
 
 users = load_users(s.auth_file)
-print(f"[boot] auth_file={s.auth_file} users={[u.username for u in users]}", flush=True)
+_log(f"[boot] auth_file={s.auth_file} users={[u.username for u in users]}")
 _ui_guard = BasicAuthGuard(users)
 _cv = threading.Condition()
 
@@ -95,7 +101,7 @@ def _log_request() -> None:
             return  # reduce noise for frequent polling
         b = _body_snippet()
         extra = f" body={b}" if b else ""
-        print(f"{prefix} {request.method} {request.path}{extra}", flush=True)
+        _log(f"{prefix} {request.method} {request.path}{extra}")
     except Exception:
         pass
 
@@ -108,7 +114,7 @@ def _log_response(resp: Response):
         prefix = "[webui <- minotaur]"
         if request.path in AGENT_ENDPOINTS:
             prefix = "[agent <- minotaur]"
-        print(f"{prefix} {request.method} {request.path} -> {resp.status_code}", flush=True)
+        _log(f"{prefix} {request.method} {request.path} -> {resp.status_code}")
     except Exception:
         pass
     return resp
@@ -125,7 +131,7 @@ class EventBus:
             with self._cv:
                 self._seq += 1
                 self._cv.notify_all()
-            print(f"[event] emit kind={kind} seq={self._seq}", flush=True)
+            _log(f"[event] emit kind={kind} seq={self._seq}")
         except Exception:
             pass
 
@@ -305,7 +311,7 @@ def select_route():
     agent_name = agent_id  # store as agent_name for now
     git_sha = request.headers.get("X-Agent-Git") or None
     try:
-        print(f"[agent] /select agent_id={agent_id or '-'} git={git_sha or '-'} problem={problem}", flush=True)
+        _log(f"[agent] /select agent_id={agent_id or '-'} git={git_sha or '-'} problem={problem}")
     except Exception:
         pass
     base_prio = s.base_priority_default
@@ -320,7 +326,7 @@ def select_route():
         )
     try:
         qn = dbm.query_one(conn, "SELECT COUNT(1) AS n FROM trials WHERE status='queued'")
-        print(f"[agent] enqueued ticket={ticket} queued={int(qn['n']) if qn else 0}", flush=True)
+        _log(f"[agent] enqueued ticket={ticket} queued={int(qn['n']) if qn else 0}")
     except Exception:
         pass
     _bus.emit("enqueue")
@@ -357,6 +363,47 @@ def select_route():
         if preempt_grant:
             _bus.emit("preempt-grant")
 
+    # If someone else is running but no one else is queued (except this ticket), preempt to keep flow snappy
+    # Guard carefully to avoid self-preempting this very ticket.
+    try:
+        did_giveup = False
+        did_grant = False
+        with dbm.tx(conn):
+            myrow = dbm.query_one(conn, "SELECT id, status FROM trials WHERE ticket=?", (ticket,))
+            running = dbm.query_one(conn, "SELECT id, ticket FROM trials WHERE status='running' LIMIT 1")
+            cnt_other = dbm.query_one(
+                conn,
+                "SELECT COUNT(1) AS n FROM trials WHERE status='queued' AND ticket<>?",
+                (ticket,),
+            )
+            n_other = int(cnt_other["n"]) if cnt_other else 0
+            if (
+                running is not None
+                and running["ticket"] != ticket
+                and myrow is not None
+                and myrow["status"] == "queued"
+                and n_other == 0
+            ):
+                # preempt current (other) running and grant this ticket immediately
+                conn.execute(
+                    "UPDATE trials SET status='giveup', finished_at=? WHERE id=? AND status='running'",
+                    (utcnow_str(), running["id"]),
+                )
+                did_giveup = True
+                sid = str(uuid.uuid4())
+                lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
+                conn.execute(
+                    "UPDATE trials SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE ticket=? AND status='queued'",
+                    (utcnow_str(), lease, sid, ticket),
+                )
+                did_grant = True
+        if did_giveup:
+            _bus.emit("preempt-giveup")
+        if did_grant:
+            _bus.emit("preempt-grant")
+    except Exception:
+        pass
+
     # Try grant immediately if idle (scheduler nudge)
     _grant_waiting_if_idle()
 
@@ -391,7 +438,7 @@ def select_route():
     lease = (datetime.now(timezone.utc) + timedelta(seconds=s.trial_ttl_sec)).isoformat().replace("+00:00", "Z")
     with conn:
         conn.execute("UPDATE trials SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
-    print(f"[agent] granted ticket={ticket} sid={started} lease={lease}", flush=True)
+    _log(f"[agent] granted ticket={ticket} sid={started} lease={lease}")
     return make_response(jsonify(out))
 
 
@@ -425,7 +472,7 @@ def explore_route():
     _touch_lease()
     try:
         plans = body.get("plans") or []
-        print(f"[agent] /explore agent_id={agent_id or '-'} sid={sid} plans={len(plans)} qc->{int(out.get('queryCount',0))}", flush=True)
+        _log(f"[agent] /explore agent_id={agent_id or '-'} sid={sid} plans={len(plans)} qc->{int(out.get('queryCount',0))}")
     except Exception:
         pass
     _bus.emit("explore")
@@ -451,7 +498,7 @@ def guess_route():
                 (utcnow_str(),),
             )
     _touch_lease()
-    print(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}", flush=True)
+    _log(f"[agent] /guess agent_id={agent_id or '-'} sid={sid} correct={bool(out.get('correct'))}")
     _bus.emit("guess")
     return jsonify(out)
 

@@ -568,11 +568,21 @@ if __name__ == "__main__":
         target_host, target_port = parse_host_port(args.client_test)
 
         import http.client
+        import os as _os
+        _AGENT_ID = f"local_judge_server:{_os.getpid()}"
 
         def post_json(path: str, obj: Dict):
             body = json.dumps(obj)
             conn = http.client.HTTPConnection(target_host, target_port, timeout=10)
-            conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+            conn.request(
+                "POST",
+                path,
+                body=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Agent-ID": _AGENT_ID,
+                },
+            )
             resp = conn.getresponse()
             raw = resp.read()
             text = raw.decode("utf-8", errors="replace")
