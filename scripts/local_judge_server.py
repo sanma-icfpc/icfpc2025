@@ -54,6 +54,7 @@ class Labyrinth:
         # Record label AFTER each move (length == len(plan))
         cur = self.start
         out: List[int] = []
+        out.append(self.labels[cur])
         for ch in plan:
             d = ord(ch) - 48  # fast int(ch) for '0'..'9'
             if d < 0 or d > 5:
