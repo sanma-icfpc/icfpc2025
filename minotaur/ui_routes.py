@@ -110,14 +110,33 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
     @app.route("/minotaur/status")
     @guard.require()
     def ui_status():
+        # Pagination for recent
+        try:
+            recent_page = int(request.args.get("recent_page", "1") or "1")
+            if recent_page < 1:
+                recent_page = 1
+        except Exception:
+            recent_page = 1
+        page_size = 20
+        offset = (recent_page - 1) * page_size
         running = ctx.conn.execute(
             "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
         queued = ctx.conn.execute(
             "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20"
         ).fetchall()
+        # Count total recent for pagination
+        recent_total_row = ctx.conn.execute(
+            "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted')"
+        ).fetchone()
+        recent_total = int(recent_total_row["c"]) if recent_total_row else 0
+        recent_pages = max(1, (recent_total + page_size - 1) // page_size)
+        if recent_page > recent_pages:
+            recent_page = recent_pages
+            offset = (recent_page - 1) * page_size
         recent = ctx.conn.execute(
-            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted') ORDER BY finished_at DESC LIMIT 20"
+            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted') ORDER BY finished_at DESC LIMIT ? OFFSET ?",
+            (page_size, offset),
         ).fetchall()
         running_flows = _flows(ctx, int(running["id"])) if running else []
         queued_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in queued}
@@ -130,6 +149,9 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             queued_flows=queued_flows_map,
             recent=recent,
             recent_flows=recent_flows_map,
+            recent_page=recent_page,
+            recent_pages=recent_pages,
+            recent_total=recent_total,
         )
 
     @app.route("/minotaur/stream")
