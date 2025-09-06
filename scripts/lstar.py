@@ -17,6 +17,7 @@ import json
 import random
 import requests
 import sys
+import datetime
 
 BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
 ALPHABET = "012345"  # door labels
@@ -136,6 +137,8 @@ class ExploreOracle:
         self.last_label: Dict[str, int] = {}           # word -> final label
         self.pending: List[str] = []
         self.init_label: Optional[int] = None
+        self.last_query_count: int = 0
+        self.last_query_count_output_datetime = datetime.datetime.now()
 
     def ensure(self, words: Set[str]) -> None:
         """
@@ -160,7 +163,10 @@ class ExploreOracle:
         plans = list(dict.fromkeys(self.pending))  # dedupe, keep order
         self.pending.clear()
         results, _qc = self.client.explore(plans)
-        print(f"{_qc=}")
+        if self.last_query_count_output_datetime + datetime.timedelta(seconds=1.0) < datetime.datetime.now():
+            self.last_query_count_output_datetime = datetime.datetime.now() + datetime.timedelta(seconds=1.0)
+            print(f"{_qc=}")
+        self.last_query_count = _qc
         assert len(results) == len(plans)
         for w, trace in zip(plans, results):
             # trace length must be len(w)+1
@@ -251,7 +257,7 @@ class LStarMooreLearner:
     Moore 型オートマトン用 L* 学習器。閉性／一貫性／反例検出で仮説を修正。
     """
 
-    def __init__(self, oracle: ExploreOracle, max_loops: int = 200):
+    def __init__(self, oracle: ExploreOracle, max_loops: int = 200, bfs_depth: int = 4, bfs_adoption_propbability: float = 1.0, max_random_len: int = 8, num_trials: int = 200):
         """
         Args:
             oracle (ExploreOracle): 観測を収集するオラクル。
@@ -259,6 +265,10 @@ class LStarMooreLearner:
         """
         self.oracle = oracle
         self.max_loops = max_loops
+        self.bfs_depth = bfs_depth
+        self.bfs_adoption_propbability = bfs_adoption_propbability
+        self.max_random_len = max_random_len
+        self.num_trials = num_trials
         self.S: List[str] = [""]            # access prefixes
         self.E: List[str] = [""]            # distinguishing suffixes (must contain "")
         # Pre-warm a tiny query to get initial label (and server wake-up)
@@ -364,7 +374,7 @@ class LStarMooreLearner:
                           outputs=outputs,
                           delta=delta)
 
-    def strengthen_with_counterexample(self, hyp: Hypothesis, max_len: int = 8, trials: int = 200) -> bool:
+    def strengthen_with_counterexample(self, hyp: Hypothesis) -> bool:
         """
         仮説に対する反例があれば S を拡張する。
 
@@ -378,19 +388,21 @@ class LStarMooreLearner:
         """
         # Build some test words (systematic + random)
         tests: Set[str] = set()
-        # small BFS up to length 4
+        # small BFS up to length self.bfs_depth
         frontier = [""]
-        for _ in range(4):
+        for _ in range(self.bfs_depth):
             new_frontier = []
             for u in frontier:
                 for a in ALPHABET:
+                    if random.random() > self.bfs_adoption_propbability:
+                        continue
                     w = u + a
                     tests.add(w)
                     new_frontier.append(w)
             frontier = new_frontier
         # random longer
-        for _ in range(trials):
-            L = random.randint(1, max_len)
+        for _ in range(self.num_trials):
+            L = random.randint(1, self.max_random_len)
             w = "".join(random.choice(ALPHABET) for _ in range(L))
             tests.add(w)
 
