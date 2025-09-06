@@ -1,3 +1,4 @@
+from typing import List
 import lstar
 
 
@@ -19,22 +20,28 @@ class LStarMooreRandomWalkLearner(lstar.LStarMooreLearner):
 
     # --- ランダムウォーク生成ユーティリティ -----------------------------
 
-    def _gen_random_walks(
-        self, num: int = 4, max_len: int = 16, seed: int | None = None
-    ) -> list[str]:
+    def _gen_random_walks(self, num: int = 3, max_len: int = 8, seed: int | None = None) -> List[str]:
         """
-        数本のランダムウォーク語を生成する。
+        数本のランダムウォーク語を生成。
         - 1 本の“最長語”に偏らず、複数本（長さは中～やや長）で分岐を広く叩く。
         - 生成した語は strengthen_with_counterexample() で一括問い合わせる。
         参考: L* は観測表で仮説を作り、反例で修正する枠組み。反例候補として
             ランダム語を用いるのは実務で一般的（理論背景は Angluin 系）。
+        max_len に 1〜8 を指定しても例外を出さないよう修正。
         """
         import random as _rnd
-
         rnd = _rnd.Random(seed)
         walks = []
-        for _ in range(max(1, num)):
-            L = rnd.randint(max(3, max_len // 2), max_len)
+        for _ in range(num):
+            # min_len: at least 1, and no more than max_len
+            min_len = 1
+            # Compute a start length, e.g., half of max_len (rounded down)
+            mid = max_len // 2
+            # Ensure min_len ≤ mid ≤ max_len
+            min_len = min(mid, max_len)
+            # Ensure at least 1
+            min_len = max(1, min_len)
+            L = rnd.randint(min_len, max_len)
             walks.append("".join(rnd.choice(lstar.ALPHABET) for _ in range(L)))
         return walks
 
