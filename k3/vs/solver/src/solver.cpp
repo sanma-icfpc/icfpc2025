@@ -57,12 +57,16 @@ iosetup(true); // set false when solving interective problems
 /** string formatter **/
 template<typename... Ts> std::string format(const std::string& f, Ts... t) { size_t l = std::snprintf(nullptr, 0, f.c_str(), t...); std::vector<char> b(l + 1); std::snprintf(&b[0], l + 1, f.c_str(), t...); return std::string(&b[0], &b[0] + l); }
 /** dump **/
-#define DUMPOUT std::cerr
-std::ostringstream DUMPBUF;
-bool DUMP_ENABLED = true;
-#define debug(...) do{ if (DUMP_ENABLED) { DUMPBUF<<"  ";DUMPBUF<<#__VA_ARGS__<<" :[DUMP - "<<__LINE__<<":"<<__FUNCTION__<<']'<<std::endl;DUMPBUF<<"    ";dump_func(__VA_ARGS__);DUMPOUT<<DUMPBUF.str();DUMPBUF.str("");DUMPBUF.clear(); } }while(0);
-void dump_func() { DUMPBUF << std::endl; }
-template <class Head, class... Tail> void dump_func(Head&& head, Tail&&... tail) { DUMPBUF << head; if (sizeof...(Tail) == 0) { DUMPBUF << " "; } else { DUMPBUF << ", "; } dump_func(std::move(tail)...); }
+#define ENABLE_DUMP
+#ifdef ENABLE_DUMP
+std::ofstream ofs("log.txt");
+#define DUMPOUT ofs
+#define debug(...) do{DUMPOUT<<"  ";DUMPOUT<<#__VA_ARGS__<<" :[DUMP - "<<__LINE__<<":"<<__FUNCTION__<<"]"<<std::endl;DUMPOUT<<"    ";dump_func(__VA_ARGS__);}while(0);
+void dump_func() { DUMPOUT << std::endl; }
+template <class Head, class... Tail> void dump_func(Head&& head, Tail&&... tail) { DUMPOUT << head; if (sizeof...(Tail) == 0) { DUMPOUT << " "; } else { DUMPOUT << ", "; } dump_func(std::move(tail)...); }
+#else
+#define debug(...) void(0);
+#endif
 /** timer **/
 class Timer {
     double t = 0, paused = 0, tmp;
@@ -205,26 +209,33 @@ struct Perf {
 
 
 const std::unordered_map<std::string, int> catalog = {
-        {"probatio", 3},
-        {"primus",   6},
-        {"secundus",12},
-        {"tertius", 18},
-        {"quartus", 24},
-        {"quintus", 30}
+    {"probatio", 3},
+    {"primus",   6},
+    {"secundus",12},
+    {"tertius", 18},
+    {"quartus", 24},
+    {"quintus", 30}
 };
 
 using Door = int;
 using Room = int;
 
 struct Port {
+
     int room;
     int door;
 
     Port(int room_ = -1, int door_ = -1) : room(room_), door(door_) {}
+
     std::string str() const { return format("Port [room=%d, door=%d]", room, door); }
+
     bool operator==(const Port& rhs) const { return room == rhs.room && door == rhs.door; }
     bool operator<(const Port& rhs) const { return room == rhs.room ? door < rhs.door : room < rhs.room; }
     bool operator>(const Port& rhs) const { return room == rhs.room ? door > rhs.door : room > rhs.room; }
+
+    inline int to_int() const { return room * 6 + door; }
+    static Port from_int(int p) { return Port(p / 6, p % 6); }
+
 };
 
 //======================= 実マップ（地図の真値） =======================
@@ -402,7 +413,6 @@ Labyrinth generate_random_labyrinth(int n_rooms, std::optional<uint64_t> seed = 
 
     L.start = 0;
 
-#if 1
     // すべてのポート (r,d) を列挙
     std::vector<Port> ports; ports.reserve((size_t)n_rooms * 6);
     for (int r = 0; r < n_rooms; ++r) for (int d = 0; d < 6; ++d) ports.emplace_back(r, d);
@@ -447,22 +457,6 @@ Labyrinth generate_random_labyrinth(int n_rooms, std::optional<uint64_t> seed = 
         auto [r2, d2] = kv.second;
         to[r][d] = Port{ r2, d2 };
     }
-#else
-    std::vector<std::array<Port, 6>> to(n_rooms);
-    for (int r = 0; r < n_rooms; ++r) for (int d = 0; d < 6; ++d) to[r][d] = Port{ -1,-1 };
-
-    std::vector<Port> ports;
-    for (int r = 0; r < n_rooms; ++r) for (int d = 0; d < 6; ++d) ports.emplace_back(r, d);
-    std::shuffle(ports.begin(), ports.end(), engine);
-
-    for (int i = 0; i < (int)ports.size(); i += 2) {
-        const auto& p = ports[i];
-        const auto& q = ports[i + 1];
-        // p <-> q
-        to[p.room][p.door] = q;
-        to[q.room][q.door] = p;
-    }
-#endif
 
     // 完全性保証
     for (int r = 0; r < n_rooms; ++r)
@@ -582,17 +576,14 @@ int demo() {
     return 0;
 }
 
-
-int main() {
+void solve_local() {
 
     Timer timer;
-
-#if 0
 
     const std::string problem_name = "probatio";
 
     LocalJudge J;
-    J.select_problem(problem_name, /*seed*/ 1);
+    J.select_problem(problem_name, /*seed*/ 42);
 
     std::cerr << J.active.value() << '\n';
 
@@ -609,7 +600,7 @@ int main() {
     debug(cmds);
 
     auto er = J.explore({ cmds });
-    
+
     size_t iter = 0;
     Labyrinth lab;
     while (true) {
@@ -623,33 +614,179 @@ int main() {
     }
 
     debug(equivalent(J.active.value(), lab), timer.elapsed_ms());
-    
-    std::cerr << er << '\n';
-#else
 
-    std::ofstream ofs("log.txt");
+    std::cerr << er << '\n';
+}
+
+
+// ---- partner ベクトル（長さ P=6n）から Labyrinth を構築 ----
+static Labyrinth BuildLabyrinthFromPartner(int n, const std::vector<int>& partner, const std::vector<int>& labels, int start = 0) {
+    Labyrinth L;
+    L.labels = labels;
+    L.start = start;
+    L.to.assign(n, {});
+    for (int r = 0; r < n; ++r) {
+        for (int d = 0; d < 6; ++d) {
+            int p = r * 6 + d;
+            int q = partner[p];
+            int rr = q / 6, dd = q % 6;
+            L.to[r][d] = Port{ rr, dd };
+        }
+    }
+    return L;
+}
+
+// ---- ランダム初期マッチング（完全マッチングを作る） ----
+static std::vector<int> RandomPartner(int n, std::mt19937_64& eng, double p_self = 0.04) {
+    const int P = 6 * n;
+    std::vector<int> partner(P, -1);
+    std::vector<int> ports(P);
+    std::iota(ports.begin(), ports.end(), 0);
+    std::shuffle(ports.begin(), ports.end(), eng);
+
+    std::uniform_real_distribution<> U(0.0, 1.0);
+
+    for (int i = 0; i < P; ++i) {
+        int p = ports[i];
+        if (partner[p] != -1) continue;
+        if (U(eng) < p_self) { // 自己ループ
+            partner[p] = p;
+            continue;
+        }
+        int j = i + 1;
+        while (j < P && partner[ports[j]] != -1) ++j;
+        if (j >= P) { partner[p] = p; break; }
+        int q = ports[j];
+        partner[p] = q;
+        partner[q] = p;
+        std::swap(ports[j], ports[i + 1]);
+    }
+    // 保険
+    for (int p = 0; p < P; ++p) if (partner[p] == -1) partner[p] = p;
+    return partner;
+}
+
+// ---- 観測列 y と計画 plan に対するミスマッチ数（完全再シミュレーション） ----
+// out_labels != nullptr のとき、訪問した部屋のラベルを確定して返す（未訪問は -1 のまま）
+static int SimulateCost(const std::vector<int>& partner, const std::string& plan, const std::vector<int>& y, int n, std::vector<int>* out_labels = nullptr) {
+    const int L = (int)plan.size();
+    int cur = 0; // start=0
+    int cost = 0;
+    std::vector<int> lbl(n, -1);
+
+    // i=0（開始時の観測）
+    if (lbl[cur] == -1) lbl[cur] = y[0];
+    else if (lbl[cur] != y[0]) ++cost;
+
+    for (int i = 0; i < L; ++i) {
+        int d = plan[i] - '0';
+        int p = cur * 6 + d;
+        int q = partner[p];
+        cur = q / 6;
+        int obs = y[i + 1];
+        if (lbl[cur] == -1) lbl[cur] = obs;
+        else if (lbl[cur] != obs) ++cost;
+    }
+    if (out_labels) *out_labels = std::move(lbl);
+    return cost;
+}
+
+// ---- 2-switch 近傍（p-P, q-Q を p-q, P-Q に入れ替える）----
+// 4点 {p,P,q,Q} が全て互いに異なる場合にのみ実行（自己ループの解除・生成はこの制約内で自然に起こる）
+static bool TwoSwitch(std::vector<int>& partner, int p, int q) {
+    if (p == q) return false;
+    int P = partner[p];
+    int Q = partner[q];
+    if (P == q || Q == p) return false;
+    if (p == P || q == Q) return false;      // 自己と組のケースは今回はスキップ（単純化）
+    if (P == Q) return false;
+
+    // p<->q, P<->Q に張り替え
+    partner[p] = q; partner[q] = p;
+    partner[P] = Q; partner[Q] = P;
+    return true;
+}
+
+// ---- 極小SA（2-switch のみ） ----
+struct SAParams {
+    int iters = 200000;         // 反復回数（probatioなら十分軽い）
+    double T0 = 1.0;
+    double T1 = 1e-3;
+};
+
+static std::vector<int> SolveBySA_2Switch(const std::string& plan, const std::vector<int>& y, int n, std::mt19937_64& eng, const SAParams& prm = {}) {
+    const int P = 6 * n;
+    std::uniform_int_distribution<int> UniPort(0, P - 1);
+    std::uniform_real_distribution<> U(0.0, 1.0);
+
+    // 初期解：ランダム完全マッチング
+    std::vector<int> partner = RandomPartner(n, eng);
+
+    int best_cost = SimulateCost(partner, plan, y, n);
+    int cur_cost = best_cost;
+    std::vector<int> best_partner = partner;
+
+    for (int it = 0; it < prm.iters && best_cost > 0; ++it) {
+        // 温度
+        double T = get_temp(prm.T0, prm.T1, (double)it, (double)prm.iters);
+
+        // 近傍生成
+        int p = UniPort(eng), q = UniPort(eng);
+        if (!TwoSwitch(partner, p, q)) { continue; }
+
+        // コスト評価（フル再計算）
+        int nxt = SimulateCost(partner, plan, y, n);
+        int delta = nxt - cur_cost;
+
+        // 受理判定
+        bool accept = false;
+        if (delta <= 0) accept = true;
+        else {
+            // log(u) < -Δ/T  ⇔  u < exp(-Δ/T)
+            double u = U(eng);
+            if (std::log(u) < -(double)delta / T) accept = true;
+        }
+
+        if (accept) {
+            cur_cost = nxt;
+            if (cur_cost < best_cost) {
+                best_cost = cur_cost;
+                best_partner = partner;
+            }
+        }
+        else {
+            // 差し戻し（もう一度2-switchすれば元に戻る）
+            TwoSwitch(partner, p, q);
+        }
+    }
+    return best_partner;
+}
+
+int main() {
+
+    Timer timer;
 
     std::mt19937_64 engine(0);
 
     const int num_rooms = [&]() {
         std::string line;
         std::cin >> line;
-        ofs << line << std::endl;
+        debug(line);
         assert(catalog.count(line));
-        ofs << catalog.at(line) << std::endl;
+        debug(catalog.at(line));
         return catalog.at(line);
     }();
 
     const int max_plan_length = num_rooms * 18;
-    ofs << max_plan_length << std::endl;
+    debug(max_plan_length);
 
-    const auto plan = [&max_plan_length, &engine, &ofs] () {
+    const auto plan = [&max_plan_length, &engine] () {
         std::string p;
         for (int i = 0; i < max_plan_length; i++) {
             p.push_back(char(i % 6) + '0');
         }
         std::shuffle(p.begin(), p.end(), engine);
-        ofs << p << std::endl;
+        debug(p);
         return p;
     } ();
     
@@ -666,30 +803,28 @@ int main() {
         }
         return labels;
         } ();
-    ofs << labels << std::endl;
+    debug(labels);
 
-    size_t iter = 0;
-    Labyrinth lab;
-    while (true) {
-        iter++;
-        if (iter % 1000000 == 0) {
-            ofs << timer.elapsed_ms() << ", " << iter << std::endl;
-        }
-        lab = generate_random_labyrinth(num_rooms, engine());
-        auto labels2 = lab.explore_plan(plan);
-        if (labels == labels2) {
-            ofs << iter << std::endl;
-            break;
-        }
-    }
+    // --- SA で partner を最適化 ---
+    SAParams prm;
+    prm.iters = 200000;    // probatio なら 2e5 程度でOK（必要に応じて増減）
+    prm.T0 = 1.0;
+    prm.T1 = 1e-3;
 
+    // partner を最小化
+    auto partner = SolveBySA_2Switch(plan, labels, num_rooms, engine, prm);
+
+    // 最終 partner でラベルを確定（訪問した部屋のみ確定。未訪問は -1 のまま）
+    std::vector<int> final_labels;
+    int final_cost = SimulateCost(partner, plan, labels, num_rooms, &final_labels);
+
+    // 未訪問のラベルは 0 で埋めておく（本番では均等分布制約などで埋めるのが望ましい）
+    for (int r = 0; r < num_rooms; ++r) if (final_labels[r] < 0) final_labels[r] = 0;
+
+    // Labyrinth を構築して JSON 出力
+    Labyrinth lab = BuildLabyrinthFromPartner(num_rooms, partner, final_labels, /*start=*/0);
     GuessMap m(lab);
-
     std::cout << m.to_json() << std::endl;
-
-#endif
-
-    //debug(equivalent(J.active.value(), lab));
 
 	return 0;
 }
