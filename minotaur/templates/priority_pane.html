@@ -34,8 +34,9 @@
           <td class="p-1 text-xs text-gray-500"><span data-share> w={{ r.priority }} v={{ '%.2f' % (r.vtime or 0) }} s={{ '%.1f' % (r.service or 0) }}</span></td>
           <td class="p-1">
             {% if r.name != '*' %}
-            {% set pinned = r.pinned or 0 %}
-            <button data-pin class="px-2 py-1 text-xs rounded {{ 'bg-yellow-500 text-white' if pinned else 'bg-gray-200' }}" onclick="togglePin('{{ r.name }}', {{ 1 if not pinned else 0 }}); return false;">{{ 'Unpin' if pinned else 'Pin' }}</button>
+            {% set _pinval = r.pinned or 0 %}
+            {% set pinned_persist = 1 if _pinval == 1 else 0 %}
+            <button data-pin class="px-2 py-1 text-xs rounded {{ 'bg-yellow-500 text-white' if pinned_persist else 'bg-gray-200' }}" onclick="togglePin('{{ r.name }}', {{ 1 if not pinned_persist else 0 }}); return false;">{{ 'Unpin' if pinned_persist else 'Pin' }}</button>
             {% else %}
             <span class="text-gray-400">—</span>
             {% endif %}
@@ -49,7 +50,14 @@
           </td>
           <td class="p-1">
             {% if r.name != '*' %}
-            <button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent('{{ r.name }}'); return false;">Select for Next</button>
+            <div class="flex items-center gap-2">
+              <button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent('{{ r.name }}'); return false;">Select for Next</button>
+              {% if (r.pinned or 0) == 2 %}
+                <span data-next-flag class="badge badge-queued">Next</span>
+              {% else %}
+                <span data-next-flag class="hidden badge badge-queued">Next</span>
+              {% endif %}
+            </div>
             {% else %}
             <span class="text-gray-400">—</span>
             {% endif %}

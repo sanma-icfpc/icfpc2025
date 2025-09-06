@@ -9,6 +9,8 @@
   <script src="https://cdn.jsdelivr.net/npm/jdenticon@3.3.0/dist/jdenticon.min.js" defer></script>
   <style>
     .navbar-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    /* Ensure hidden wins over any later display rules */
+    .hidden { display: none !important; }
     .badge { display:inline-block; padding:2px 6px; border-radius:9999px; font-size:12px; line-height:16px; }
     .badge-running { background:#dbeafe; color:#1e3a8a; }
     .badge-queued { background:#fef9c3; color:#854d0e; }
@@ -20,6 +22,11 @@
     .badge-inactive { background:#f3f4f6; color:#6b7280; }
     .badge-online { background:#dcfce7; color:#166534; }
     .badge-offline { background:#fee2e2; color:#991b1b; }
+    /* Auto Update switch */
+    .auto-switch { position: relative; width: 42px; height: 22px; border-radius: 9999px; background: #e5e7eb; cursor: pointer; transition: background-color .15s ease; }
+    .auto-switch.on { background: #34d399; }
+    .auto-switch .knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 9999px; background: #ffffff; transition: left .15s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+    .auto-switch.on .knob { left: 22px; }
   </style>
   </head>
 <body class="bg-gray-100 text-gray-900">
@@ -39,6 +46,8 @@
           <span id="agent-count" class="font-mono">0</span>
           <span>Server Status:</span>
           <span id="sse-status" class="badge badge-offline ml-2">🔴 OFFLINE</span>
+          <span class="ml-4">Auto Update</span>
+          <button id="auto-toggle" class="auto-switch on" role="switch" aria-checked="true" aria-label="Auto Update" onclick="toggleAutoUpdate()"><span class="knob"></span></button>
           <button class="ml-4 px-3 py-1 bg-gray-800 text-white rounded" onclick="openModal()">設定</button>
           <button class="ml-2 px-3 py-1 bg-red-700 text-white rounded" onclick="shutdownServer(event)">サーバを終了</button>
         </div>
@@ -66,6 +75,8 @@
   <script>
     // ----- Status auto refresh via SSE -----
     let statusInFlight = false;
+    let autoUpdateEnabled = true; // default ON
+    let es = null; // EventSource instance when auto-update is ON
     let expandedKeys = new Set();
     let detailsOpenIdx = [];
     let innerScrollTops = [];
@@ -147,20 +158,57 @@
         .catch(() => {});
     }
     function startSSE() {
+      if (!autoUpdateEnabled) return;
+      stopSSE();
       try {
-        const es = new EventSource('/minotaur/stream');
+        es = new EventSource('/minotaur/stream');
         setSSEStatus(true);
-        es.addEventListener('open', function(_) { setSSEStatus(true); });
-        es.onopen = function() { setSSEStatus(true); };
-        es.addEventListener('change', function(_) { loadStatus(); updateAgentCount(); refreshPriorityStatuses(); });
-        es.onerror = function(_) { setSSEStatus(false); /* auto-reconnect */ };
+        es.addEventListener('open', function(_) { if (autoUpdateEnabled) setSSEStatus(true); });
+        es.onopen = function() { if (autoUpdateEnabled) setSSEStatus(true); };
+        es.addEventListener('change', function(_) {
+          if (!autoUpdateEnabled) return;
+          loadStatus(); updateAgentCount(); refreshPriorityStatuses();
+        });
+        es.onerror = function(_) { if (autoUpdateEnabled) setSSEStatus(false); };
       } catch (_) {}
+    }
+
+    function stopSSE() {
+      try { if (es) { es.close(); } } catch (_) {}
+      es = null;
+    }
+
+    function updateAutoToggleUI() {
+      const t = document.getElementById('auto-toggle');
+      if (!t) return;
+      if (autoUpdateEnabled) {
+        t.classList.add('on');
+        t.setAttribute('aria-checked', 'true');
+      } else {
+        t.classList.remove('on');
+        t.setAttribute('aria-checked', 'false');
+      }
+    }
+
+    function toggleAutoUpdate() {
+      autoUpdateEnabled = !autoUpdateEnabled;
+      updateAutoToggleUI();
+      if (autoUpdateEnabled) {
+        startSSE();
+        // kick a refresh immediately when turning ON
+        loadStatus(); updateAgentCount(); refreshPriorityStatuses();
+      } else {
+        stopSSE();
+        // reflect paused state in badge
+        setSSEStatus(false);
+      }
     }
     document.addEventListener('DOMContentLoaded', function() {
       loadStatus();
       loadPriorities(true);
       updateAgentCount();
       setSSEStatus(true);
+      updateAutoToggleUI();
       startSSE();
       setInterval(updateRelativeTimes, 1000);
     });
@@ -273,8 +321,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
         credentials: 'same-origin'
-      }).then(() => { loadStatus(); })
-        .catch(() => { loadStatus(); });
+      }).then(() => { loadStatus(); refreshPriorityStatuses(); })
+        .catch(() => { loadStatus(); refreshPriorityStatuses(); });
       return false;
     }
 
@@ -293,7 +341,9 @@
             const name = row.name;
             const prio = row.priority;
             const status = row.status;
-            const pinned = row.pinned ? 1 : 0;
+            const _pinval = (typeof row.pinned === 'number') ? row.pinned : (row.pinned ? 1 : 0);
+            const pinned = (_pinval === 1) ? 1 : 0; // persistent pin only
+            const nextFlag = (_pinval === 2) ? 1 : 0; // one-shot select-next
             let tr = existing.get(name);
             if (!tr) {
               const newRow = document.createElement('tr');
@@ -311,7 +361,7 @@
                 <td class="p-1 text-xs text-gray-500"><span data-share>w=${prio} v=${(row.vtime||0).toFixed ? row.vtime.toFixed(2) : '0.00'} s=${(row.service||0).toFixed ? row.service.toFixed(1) : '0.0'}</span></td>
                 <td class="p-1">${name !== '*' ? '<button data-pin class="px-2 py-1 text-xs ' + (pinned ? 'bg-yellow-500 text-white' : 'bg-gray-200') + '" onclick="togglePin(\'' + name + '\',' + (pinned ? 0 : 1) + '); return false;">' + (pinned ? 'Unpin' : 'Pin') + '</button>' : '<span class="text-gray-400">—</span>'}</td>
                 <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteAgentPriority(\'' + name + '\'); return false;">Delete</button>' : '<span class="text-gray-400">—</span>'}</td>
-                <td class="p-1">${name !== '*' ? '<button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent(\'' + name + '\'); return false;">Select for Next</button>' : '<span class="text-gray-400">—</span>'}</td>
+                <td class="p-1">${name !== '*' ? '<div class="flex items-center gap-2"><button class="px-2 py-1 text-xs bg-blue-600 text-white rounded" onclick="selectNextAgent(\'' + name + '\'); return false;">Select for Next</button><span data-next-flag class="' + (nextFlag ? 'badge badge-queued' : 'hidden badge badge-queued') + '">Next</span></div>' : '<span class="text-gray-400">—</span>'}</td>
               `;
               const newRowInput = tableBody.querySelector('tr[data-name="__new__"]');
               tableBody.insertBefore(newRow, newRowInput ? newRowInput : null);
@@ -342,6 +392,15 @@
               pinBtn.textContent = pinned ? 'Unpin' : 'Pin';
               pinBtn.className = 'px-2 py-1 text-xs ' + (pinned ? 'bg-yellow-500 text-white' : 'bg-gray-200');
               pinBtn.setAttribute('onclick', `togglePin('${name}', ${pinned ? 0 : 1}); return false;`);
+            }
+            // Update next flag indicator
+            const nf = tr.querySelector('[data-next-flag]');
+            if (nf) {
+              if (nextFlag) {
+                nf.className = 'badge badge-queued';
+              } else {
+                nf.className = 'hidden badge badge-queued';
+              }
             }
           });
           updateIdenticons(tableBody);

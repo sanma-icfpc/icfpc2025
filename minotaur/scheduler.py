@@ -9,7 +9,7 @@ from .logging import JsonlLogger
 
 from .config import Settings
 from . import db as dbm
-from .sched_fair import priority_weight, ensure_agent_entry, pinned_name
+from .sched_fair import priority_weight, ensure_agent_entry, pick_pinned
 
 
 def utcnow_str() -> str:
@@ -56,18 +56,18 @@ class Coordinator:
             if run is not None:
                 return
             # Pinned override
-            pin = pinned_name(self.conn)
+            pin_name, pin_one_shot = pick_pinned(self.conn)
             chosen_name: Optional[str] = None
             chosen_id: Optional[int] = None
             chosen_ticket: Optional[str] = None
-            if pin:
+            if pin_name:
                 r = dbm.query_one(
                     self.conn,
                     "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
-                    (pin,),
+                    (pin_name,),
                 )
                 if r is not None:
-                    chosen_name = pin
+                    chosen_name = pin_name
                     chosen_id = int(r["id"])
                     chosen_ticket = r["ticket"]
                     if self.logger:
@@ -75,7 +75,8 @@ class Coordinator:
                             self.logger.write({
                                 "ev": "scheduler",
                                 "action": "pinned_override",
-                                "agent_name": pin,
+                                "agent_name": pin_name,
+                                "one_shot": pin_one_shot,
                                 "challenge_id": chosen_id,
                                 "ticket": chosen_ticket,
                             })
@@ -162,6 +163,16 @@ class Coordinator:
             )
             if cur.rowcount:
                 emitted = "grant"
+                # If this was a one-shot pin, clear it now
+                if pin_name and pin_one_shot:
+                    try:
+                        # Clear within the same transaction; avoid nested transactions which roll back the grant
+                        self.conn.execute(
+                            "UPDATE agent_priorities SET pinned=0 WHERE name=?",
+                            (pin_name,),
+                        )
+                    except Exception:
+                        pass
                 if self.logger:
                     try:
                         self.logger.write({

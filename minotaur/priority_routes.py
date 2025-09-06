@@ -132,9 +132,9 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
         pin = bool(data.get("pinned"))
         if not name or name == "*":
             return jsonify({"ok": False, "error": "invalid_name"}), 400
-        # Only one can be pinned
+        # Only one persistent pin (pinned=1) can be active; do not clear one-shot (pinned=2)
         with ctx.conn:
-            ctx.conn.execute("UPDATE agent_priorities SET pinned=0")
+            ctx.conn.execute("UPDATE agent_priorities SET pinned=0 WHERE pinned=1")
             if pin:
                 ctx.conn.execute(
                     "INSERT INTO agent_priorities(name, priority, updated_at, vtime, service, pinned) VALUES(?, (SELECT priority FROM agent_priorities WHERE name='*'), datetime('now'), 0.0, 0.0, 1) ON CONFLICT(name) DO UPDATE SET pinned=1",
@@ -170,16 +170,14 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
         name = (data.get("name") or "").strip()
         if not name or name == "*":
             return jsonify({"ok": False, "error": "invalid_name"}), 400
-        row = ctx.conn.execute(
-            "SELECT id FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
-            (name,),
-        ).fetchone()
-        if row is not None:
-            with ctx.conn:
-                ctx.conn.execute(
-                    "UPDATE challenges SET effective_priority=? WHERE id=?",
-                    (10_000_000, int(row["id"])),
-                )
+        # Ensure at most one one-shot (pinned=2) exists; then mark this agent as one-shot
+        with ctx.conn:
+            # Clear any existing one-shot selection(s) but keep persistent pins as-is
+            ctx.conn.execute("UPDATE agent_priorities SET pinned=0 WHERE pinned=2")
+            ctx.conn.execute(
+                "INSERT INTO agent_priorities(name, priority, updated_at, vtime, service, pinned) VALUES(?, (SELECT priority FROM agent_priorities WHERE name='*'), datetime('now'), 0.0, 0.0, 2) ON CONFLICT(name) DO UPDATE SET pinned=2",
+                (name,),
+            )
         if ctx.coord and ctx.coord.on_change:
             try:
                 ctx.coord.on_change("priorities_select_next")

@@ -107,9 +107,18 @@ def accumulate_service(
         pass
 
 
-def pinned_name(conn: sqlite3.Connection) -> Optional[str]:
-    r = conn.execute("SELECT name FROM agent_priorities WHERE pinned=1 LIMIT 1").fetchone()
-    return r["name"] if r is not None else None
+def pick_pinned(conn: sqlite3.Connection) -> tuple[Optional[str], bool]:
+    """Return (name, one_shot) if any pinned override exists.
+
+    - pinned=2: one-shot override (Select for Next). Takes precedence.
+    - pinned=1: persistent pin.
+    """
+    r = conn.execute(
+        "SELECT name, pinned FROM agent_priorities WHERE pinned IN (1,2) ORDER BY pinned DESC LIMIT 1"
+    ).fetchone()
+    if r is None:
+        return None, False
+    return r["name"], int(r["pinned"]) == 2
 
 
 def set_pinned(conn: sqlite3.Connection, name: Optional[str]) -> None:
@@ -120,4 +129,3 @@ def set_pinned(conn: sqlite3.Connection, name: Optional[str]) -> None:
                 "UPDATE agent_priorities SET pinned=1, updated_at=? WHERE name=?",
                 (_now_iso(), name),
             )
-

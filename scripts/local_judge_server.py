@@ -624,19 +624,20 @@ if __name__ == "__main__":
         _, ex2 = post_json("/explore", {"id": "ignored", "plans": ["012345"]})
 
         # 5) Solve the superdumb problem automatically
-        print("\nSolving 'superdumb' problem (1 room) automatically...\n")
-        _, sel3 = post_json("/select", {"id": "ignored", "problemName": "superdumb", "seed": 1})
-        status, ex3 = post_json("/explore", {"id": "ignored", "plans": ["0"]})
-        label = ex3.get("results", [[0]])[0][0]
-        guess_superdumb = {
-            "rooms": [label],
-            "startingRoom": 0,
-            "connections": [
-                {"from": {"room": 0, "door": d}, "to": {"room": 0, "door": d}} for d in range(6)
-            ],
-        }
-        _, g2 = post_json("/guess", {"id": "ignored", "map": guess_superdumb})
-        print("Expected correct=true for superdumb.")
+        while True:
+            print("\nSolving 'superdumb' problem (1 room) automatically...\n")
+            _, sel3 = post_json("/select", {"id": "ignored", "problemName": "superdumb", "seed": 1})
+            status, ex3 = post_json("/explore", {"id": "ignored", "plans": ["0"]})
+            label = ex3.get("results", [[0]])[0][0]
+            guess_superdumb = {
+                "rooms": [label],
+                "startingRoom": 0,
+                "connections": [
+                    {"from": {"room": 0, "door": d}, "to": {"room": 0, "door": d}} for d in range(6)
+                ],
+            }
+            _, g2 = post_json("/guess", {"id": "ignored", "map": guess_superdumb})
+            print("Expected correct=true for superdumb.")
         print("Client test completed.")
         sys.exit(0)
 
