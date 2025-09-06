@@ -230,15 +230,66 @@ def ui_status():
             return ts
 
     def flows(ch_id: int):
-        rows = dbm.query_all(conn, "SELECT api, req_key, phase, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
+        rows = dbm.query_all(conn, "SELECT api, req_key, phase, status_code, ts, req_body, res_body FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
         d = {}
         for r in rows:
             key = r["req_key"] or f"{r['api']}-{r['ts']}"
             item = d.get(key)
             if not item:
-                item = {"api": r["api"], "phases": set(), "ts": r["ts"], "tstr": fmt_ts(r["ts"]) }
+                item = {
+                    "api": r["api"],
+                    "phases": set(),
+                    "ts": r["ts"],
+                    "codes": {},
+                    "req_key": key,
+                    "req_pretty": None,
+                    "res_pretty": None,
+                    "summary": "",
+                }
                 d[key] = item
-            item["phases"].add(r["phase"])  # phases: agent_in,to_upstream,from_upstream,agent_out
+            ph = r["phase"]
+            item["phases"].add(ph)  # phases: agent_in,to_upstream,from_upstream,agent_out
+            try:
+                sc = int(r["status_code"]) if r["status_code"] is not None else 0
+            except Exception:
+                sc = 0
+            item["codes"][ph] = sc
+            # Prefer earliest req and latest res; pretty-print JSON if possible
+            import json as _json
+            if ph in ("agent_in", "to_upstream") and item["req_pretty"] is None:
+                try:
+                    obj = _json.loads(r["req_body"]) if r["req_body"] else None
+                    item["req_pretty"] = _json.dumps(obj, ensure_ascii=False, indent=2) if obj is not None else (r["req_body"] or "")
+                except Exception:
+                    item["req_pretty"] = r["req_body"] or ""
+            if ph in ("from_upstream", "agent_out"):
+                try:
+                    obj = _json.loads(r["res_body"]) if r["res_body"] else None
+                    item["res_pretty"] = _json.dumps(obj, ensure_ascii=False, indent=2) if obj is not None else (r["res_body"] or "")
+                except Exception:
+                    item["res_pretty"] = r["res_body"] or ""
+            # Build concise summary per API
+            try:
+                if r["api"] == "select" and ph == "agent_in" and not item["summary"]:
+                    obj = _json.loads(r["req_body"]) if r["req_body"] else {}
+                    pn = obj.get("problemName")
+                    item["summary"] = f"problem={pn}" if pn else ""
+                elif r["api"] == "explore" and ph == "from_upstream":
+                    robj = _json.loads(r["res_body"]) if r["res_body"] else {}
+                    results = robj.get("results") or []
+                    q = robj.get("queryCount")
+                    lens = [len(x) if isinstance(x, list) else 0 for x in results]
+                    item["summary"] = f"plans={len(lens)} results={lens} qc={q}"
+                elif r["api"] == "guess" and ph == "from_upstream":
+                    robj = _json.loads(r["res_body"]) if r["res_body"] else {}
+                    ok = robj.get("correct")
+                    req = _json.loads(r["req_body"]) if r["req_body"] else {}
+                    m = req.get("map") or {}
+                    rooms = m.get("rooms") or []
+                    conns = m.get("connections") or []
+                    item["summary"] = f"rooms={len(rooms)} conns={len(conns)} correct={ok}"
+            except Exception:
+                pass
         # sort by ts
         out = list(d.values())
         out.sort(key=lambda x: x["ts"])  # oldest first
@@ -342,15 +393,65 @@ def ui_cancel_running():
         except Exception:
             return ts
     def flows(ch_id: int):
-        rows = dbm.query_all(conn, "SELECT api, req_key, phase, status_code, ts FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
+        rows = dbm.query_all(conn, "SELECT api, req_key, phase, status_code, ts, req_body, res_body FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC", (ch_id,))
         d = {}
+        import json as _json
         for r in rows:
             key = r["req_key"] or f"{r['api']}-{r['ts']}"
             item = d.get(key)
             if not item:
-                item = {"api": r["api"], "phases": set(), "ts": r["ts"], "tstr": fmt_ts(r["ts"]) }
+                item = {
+                    "api": r["api"],
+                    "phases": set(),
+                    "ts": r["ts"],
+                    "tstr": fmt_ts(r["ts"]),
+                    "codes": {},
+                    "req_key": key,
+                    "req_pretty": None,
+                    "res_pretty": None,
+                    "summary": "",
+                }
                 d[key] = item
-            item["phases"].add(r["phase"])  # phases: agent_in,to_upstream,from_upstream,agent_out
+            ph = r["phase"]
+            item["phases"].add(ph)
+            try:
+                sc = int(r["status_code"]) if r["status_code"] is not None else 0
+            except Exception:
+                sc = 0
+            item["codes"][ph] = sc
+            if ph in ("agent_in", "to_upstream") and item["req_pretty"] is None:
+                try:
+                    obj = _json.loads(r["req_body"]) if r["req_body"] else None
+                    item["req_pretty"] = _json.dumps(obj, ensure_ascii=False, indent=2) if obj is not None else (r["req_body"] or "")
+                except Exception:
+                    item["req_pretty"] = r["req_body"] or ""
+            if ph in ("from_upstream", "agent_out"):
+                try:
+                    obj = _json.loads(r["res_body"]) if r["res_body"] else None
+                    item["res_pretty"] = _json.dumps(obj, ensure_ascii=False, indent=2) if obj is not None else (r["res_body"] or "")
+                except Exception:
+                    item["res_pretty"] = r["res_body"] or ""
+            try:
+                if r["api"] == "select" and ph == "agent_in" and not item["summary"]:
+                    obj = _json.loads(r["req_body"]) if r["req_body"] else {}
+                    pn = obj.get("problemName")
+                    item["summary"] = f"problem={pn}" if pn else ""
+                elif r["api"] == "explore" and ph == "from_upstream":
+                    robj = _json.loads(r["res_body"]) if r["res_body"] else {}
+                    results = robj.get("results") or []
+                    q = robj.get("queryCount")
+                    lens = [len(x) if isinstance(x, list) else 0 for x in results]
+                    item["summary"] = f"plans={len(lens)} results={lens} qc={q}"
+                elif r["api"] == "guess" and ph == "from_upstream":
+                    robj = _json.loads(r["res_body"]) if r["res_body"] else {}
+                    ok = robj.get("correct")
+                    req = _json.loads(r["req_body"]) if r["req_body"] else {}
+                    m = req.get("map") or {}
+                    rooms = m.get("rooms") or []
+                    conns = m.get("connections") or []
+                    item["summary"] = f"rooms={len(rooms)} conns={len(conns)} correct={ok}"
+            except Exception:
+                pass
         out = list(d.values())
         out.sort(key=lambda x: x["ts"])  # oldest first
         return out
@@ -405,8 +506,8 @@ def select_route():
     ch = dbm.query_one(conn, "SELECT id FROM challenges WHERE ticket=?", (ticket,))
     ch_id = int(ch["id"]) if ch else None
     if ch_id is not None:
-        rk0 = str(uuid.uuid4())
-        _log_ch_req(ch_id, "select", rk0, "agent_in", 0, {"problemName": problem}, {})
+        rk = str(uuid.uuid4())
+        _log_ch_req(ch_id, "select", rk, "agent_in", 0, {"problemName": problem}, {})
     try:
         qn = dbm.query_one(conn, "SELECT COUNT(1) AS n FROM challenges WHERE status='queued'")
         _log(f"[agent] enqueued ticket={ticket} queued={int(qn['n']) if qn else 0}")
@@ -458,7 +559,7 @@ def select_route():
         did_giveup = False
         did_grant = False
         with dbm.tx(conn):
-            myrow = dbm.query_one(conn, "SELECT id, status FROM trials WHERE ticket=?", (ticket,))
+            myrow = dbm.query_one(conn, "SELECT id, status FROM challenges WHERE ticket=?", (ticket,))
             running = dbm.query_one(conn, "SELECT id, ticket FROM challenges WHERE status='running' LIMIT 1")
             cnt_other = dbm.query_one(
                 conn,
@@ -535,8 +636,8 @@ def select_route():
                 "UPDATE challenges SET status='error', finished_at=? WHERE ticket=?",
                 (utcnow_str(), ticket),
             )
-    if ch_id is not None:
-        _log_ch_req(ch_id, "select", rk, "from_upstream", int(ue.status), {"problemName": problem}, ue.payload)
+        if ch_id is not None:
+            _log_ch_req(ch_id, "select", rk, "from_upstream", int(ue.status), {"problemName": problem}, ue.payload)
         return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
 
     # success: set lease and return upstream response
@@ -545,6 +646,7 @@ def select_route():
         conn.execute("UPDATE challenges SET lease_expire_at=? WHERE ticket=?", (lease, ticket))
     if ch_id is not None:
         _log_ch_req(ch_id, "select", rk, "from_upstream", 200, {"problemName": problem}, out)
+        _log_ch_req(ch_id, "select", rk, "agent_out", 200, {"problemName": problem}, out)
         _log_ch_req(ch_id, "select", rk, "agent_out", 200, {"problemName": problem}, out)
     _log(f"[agent] granted ticket={ticket} sid={started} lease={lease}")
     return make_response(jsonify(out))

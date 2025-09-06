@@ -1,7 +1,7 @@
 <div id="status" class="space-y-6">
   <!-- Running Card -->
   <div class="bg-white border rounded p-4">
-    <h3 class="font-semibold mb-2">Running</h3>
+    <h3 class="font-semibold mb-2">Running {% if running %}<span class="badge badge-running">running</span>{% endif %}</h3>
     {% if running %}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
         <div><span class="text-gray-500">ticket:</span> <code>{{ running.ticket }}</code></div>
@@ -16,18 +16,36 @@
       <div class="mt-3">
         <h4 class="font-semibold text-sm mb-1">Requests</h4>
         <div class="text-xs bg-gray-50 border rounded p-2 max-h-64 overflow-auto">
+          <div class="grid grid-cols-12 gap-2 font-mono text-gray-500 border-b pb-1 mb-1">
+            <div class="col-span-4">時刻</div>
+            <div class="col-span-2">リクエスト</div>
+            <div class="col-span-4">進捗</div>
+            <div class="col-span-2 text-right">コード</div>
+          </div>
           {% for f in running_flows %}
-            <div class="py-1 cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
-              <span class="text-gray-500">{{ f.tstr }}</span>
-              <span class="ml-2 font-mono">{{ f.api }}</span>
-              <span class="ml-2">
+            <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
+              <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
+              <div class="col-span-2">
+                <div>{{ f.api }}</div>
+                {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+              </div>
+              <div class="col-span-4">
                 <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
                 → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
                 → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
                 → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
-              </span>
+              </div>
+              <div class="col-span-2 text-right">
+                {% set c = f.codes %}
+                <span class="{{ 'text-green-600' if c.get('from_upstream',0)==200 or c.get('agent_out',0)==200 else 'text-gray-600' }}">{{ c.get('from_upstream') or c.get('agent_out') or '' }}</span>
+              </div>
             </div>
-            <div class="hidden pl-4 text-gray-600">詳細はログ（JSONL）をご確認ください。</div>
+            <div class="hidden pl-4 text-gray-600">
+              <div class="grid grid-cols-12 gap-2">
+                <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
+                <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+              </div>
+            </div>
           {% else %}
             <div class="text-gray-400">No requests yet.</div>
           {% endfor %}
@@ -57,17 +75,29 @@
           <div class="mt-2 text-xs bg-gray-50 border rounded p-2">
             {% set flows = queued_flows.get(t.id) %}
             {% for f in flows %}
-              <div class="py-1 cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                <span class="text-gray-500">{{ f.tstr }}</span>
-                <span class="ml-2 font-mono">{{ f.api }}</span>
-                <span class="ml-2">
+              <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
+                <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
+                <div class="col-span-2">
+                  <div>{{ f.api }}</div>
+                  {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                </div>
+                <div class="col-span-4">
                   <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
                   → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
                   → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
                   → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
-                </span>
+                </div>
+                <div class="col-span-2 text-right">
+                  {% set c = f.codes %}
+                  <span class="{{ 'text-green-600' if c.get('from_upstream',0)==200 or c.get('agent_out',0)==200 else 'text-gray-600' }}">{{ c.get('from_upstream') or c.get('agent_out') or '' }}</span>
+                </div>
               </div>
-              <div class="hidden pl-4 text-gray-600">詳細はログ（JSONL）をご確認ください。</div>
+              <div class="hidden pl-4 text-gray-600">
+                <div class="grid grid-cols-12 gap-2">
+                  <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
+                  <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                </div>
+              </div>
             {% else %}
               <div class="text-gray-400">No requests yet.</div>
             {% endfor %}
@@ -102,17 +132,29 @@
               <div class="mt-2 text-xs bg-gray-50 border rounded p-2">
                 {% set flows = recent_flows.get(t.id) %}
                 {% for f in flows %}
-                  <div class="py-1 cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                    <span class="text-gray-500">{{ f.tstr }}</span>
-                    <span class="ml-2 font-mono">{{ f.api }}</span>
-                    <span class="ml-2">
+                  <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
+                    <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
+                    <div class="col-span-2">
+                      <div>{{ f.api }}</div>
+                      {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                    </div>
+                    <div class="col-span-4">
                       <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
                       → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
                       → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
                       → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
-                    </span>
+                    </div>
+                    <div class="col-span-2 text-right">
+                      {% set c = f.codes %}
+                      <span class="{{ 'text-green-600' if c.get('from_upstream',0)==200 or c.get('agent_out',0)==200 else 'text-gray-600' }}">{{ c.get('from_upstream') or c.get('agent_out') or '' }}</span>
+                    </div>
                   </div>
-                  <div class="hidden pl-4 text-gray-600">詳細はログ（JSONL）をご確認ください。</div>
+                  <div class="hidden pl-4 text-gray-600">
+                    <div class="grid grid-cols-12 gap-2">
+                      <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
+                      <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                    </div>
+                  </div>
                 {% else %}
                   <div class="text-gray-400">No requests.</div>
                 {% endfor %}

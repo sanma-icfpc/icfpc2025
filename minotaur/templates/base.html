@@ -8,6 +8,13 @@
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
     .navbar-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .badge { display:inline-block; padding:2px 6px; border-radius:9999px; font-size:12px; line-height:16px; }
+    .badge-running { background:#dbeafe; color:#1e3a8a; }
+    .badge-queued { background:#fef9c3; color:#854d0e; }
+    .badge-success { background:#dcfce7; color:#166534; }
+    .badge-timeout { background:#fee2e2; color:#991b1b; }
+    .badge-giveup { background:#f3e8ff; color:#6b21a8; }
+    .badge-error { background:#ffe4e6; color:#9f1239; }
   </style>
   </head>
 <body class="bg-gray-100 text-gray-900">
@@ -51,16 +58,58 @@
   <script>
     // ----- Status auto refresh via SSE -----
     let statusInFlight = false;
+    let expandedKeys = new Set();
+    function captureUIState() {
+      expandedKeys.clear();
+      document.querySelectorAll('#status .flow-row.expanded').forEach(el => {
+        const k = el.getAttribute('data-key');
+        if (k) expandedKeys.add(k);
+      });
+    }
+    function restoreUIState() {
+      document.querySelectorAll('#status .flow-row').forEach(el => {
+        const k = el.getAttribute('data-key');
+        if (k && expandedKeys.has(k)) {
+          el.classList.add('expanded');
+          const detail = el.nextElementSibling;
+          if (detail) detail.classList.remove('hidden');
+        }
+      });
+    }
+    function updateRelativeTimes() {
+      const now = Date.now();
+      document.querySelectorAll('#status .rt').forEach(el => {
+        const ts = el.getAttribute('data-ts');
+        if (!ts) return;
+        try {
+          const dt = new Date(ts);
+          const diff = Math.max(0, Math.floor((now - dt.getTime())/1000));
+          let rel = '';
+          if (diff < 60) rel = `${diff}秒前`;
+          else if (diff < 3600) rel = `${Math.floor(diff/60)}分前`;
+          else rel = `${Math.floor(diff/3600)}時間前`;
+          const y = dt.getFullYear();
+          const m = ('0'+(dt.getMonth()+1)).slice(-2);
+          const d = ('0'+dt.getDate()).slice(-2);
+          const hh = ('0'+dt.getHours()).slice(-2);
+          const mm = ('0'+dt.getMinutes()).slice(-2);
+          const ss = ('0'+dt.getSeconds()).slice(-2);
+          el.textContent = `${y}/${m}/${d} ${hh}:${mm}:${ss} (${rel})`;
+        } catch (_) {}
+      });
+    }
     function loadStatus() {
       if (statusInFlight) return;
       const el = document.getElementById('status');
       if (!el) return;
+      const prevScroll = el.scrollTop;
+      captureUIState();
       statusInFlight = true;
       fetch('/minotaur/status', { credentials: 'same-origin' })
         .then(r => r.text())
-        .then(html => { el.outerHTML = html; })
+        .then(html => { el.innerHTML = (new DOMParser()).parseFromString(html, 'text/html').getElementById('status').innerHTML; })
         .catch(() => {})
-        .finally(() => { statusInFlight = false; });
+        .finally(() => { statusInFlight = false; el.scrollTop = prevScroll; restoreUIState(); updateRelativeTimes(); });
     }
     function startSSE() {
       try {
@@ -72,6 +121,7 @@
     document.addEventListener('DOMContentLoaded', function() {
       loadStatus();
       startSSE();
+      setInterval(updateRelativeTimes, 1000);
     });
 
     // ----- Modal load + submit (vanilla) -----
