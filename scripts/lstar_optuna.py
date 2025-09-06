@@ -55,7 +55,23 @@ def solve(
 
 
 if __name__ == "__main__":
-    problem_names = ["probatio", "primus", "secundus", "tertius", "quartus", "quintus"]
+    problem_names = [
+        "primus",
+        "secundus",
+        "tertius",
+        "quartus",
+        "quintus",
+        "aleph",
+        "beth",
+        "gimel",
+        "daleth",
+        "he",
+        "vau",
+        "zain",
+        "hhet",
+        "teth",
+        "iod",
+    ]
     threads = list()
     lock = threading.Lock()
     for problem_name in problem_names:
@@ -90,7 +106,7 @@ if __name__ == "__main__":
                         return 10000
 
             study_name = problem_name
-            storage = f"sqlite:///{study_name}.db"  # SQLite ファイルを指定
+            storage = f"sqlite:///loop.{study_name}.db"  # SQLite ファイルを指定
             study = optuna.create_study(
                 study_name=study_name, storage=storage, load_if_exists=True
             )
