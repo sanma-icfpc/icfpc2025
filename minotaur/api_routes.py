@@ -109,10 +109,12 @@ def register_api_routes(app, ctx: AppCtx) -> None:
             return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
         if bool(out.get("correct")):
             with ctx.conn:
-                rr = ctx.conn.execute("SELECT id, agent_name, started_at FROM challenges WHERE status='running' LIMIT 1").fetchone()
+                rr = ctx.conn.execute("SELECT id, agent_name, started_at, upstream_query_count FROM challenges WHERE status='running' LIMIT 1").fetchone()
+                # Record final score_query_count as the latest upstream_query_count at success time
+                final_qc = int(rr["upstream_query_count"]) if rr and rr["upstream_query_count"] is not None else None
                 ctx.conn.execute(
-                    "UPDATE challenges SET status='success', finished_at=? WHERE status='running'",
-                    (utcnow_str(),),
+                    "UPDATE challenges SET status='success', finished_at=?, score_query_count=? WHERE status='running'",
+                    (utcnow_str(), final_qc),
                 )
             try:
                 if rr is not None:

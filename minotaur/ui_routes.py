@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from flask import Response, jsonify, make_response, render_template, request, stream_with_context
+from flask import Response, jsonify, make_response, render_template, request, stream_with_context, send_file
 
 from .context import AppCtx
 from .sched_fair import accumulate_service
@@ -176,6 +176,61 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             trial_ttl_sec=ctx.s.trial_ttl_sec,
             log_dir=ctx.s.log_dir,
         )
+
+    @app.route("/minotaur/download_db")
+    @guard.require()
+    def ui_download_db():
+        try:
+            dbp = ctx.s.db_path
+            # In-memory DB URIs cannot be downloaded
+            if dbp.startswith("file:") and ("mode=memory" in dbp):
+                return jsonify({"error": "in_memory_db"}), 400
+            if not os.path.isfile(dbp):
+                return jsonify({"error": "not_found"}), 404
+            return send_file(dbp, as_attachment=True, download_name="coordinator.sqlite", mimetype="application/x-sqlite3")
+        except Exception:
+            return jsonify({"error": "download_failed"}), 500
+
+    @app.route("/minotaur/analytics")
+    @guard.require()
+    def ui_analytics():
+        # Collect axes
+        probs = [r["problem_id"] for r in ctx.conn.execute(
+            "SELECT DISTINCT problem_id FROM challenges WHERE problem_id IS NOT NULL ORDER BY problem_id"
+        ).fetchall()]
+        agents_raw = ctx.conn.execute(
+            "SELECT DISTINCT agent_name FROM challenges ORDER BY agent_name"
+        ).fetchall()
+        agents = []
+        has_null = False
+        for r in agents_raw:
+            nm = r["agent_name"]
+            if nm is None:
+                has_null = True
+            else:
+                agents.append(nm)
+        if has_null:
+            agents.append("-")  # placeholder for anonymous
+        # Build metrics map
+        q = (
+            "SELECT agent_name, problem_id, "
+            "AVG(CASE WHEN status='success' THEN score_query_count END) AS mean_qc, "
+            "MIN(CASE WHEN status='success' THEN score_query_count END) AS min_qc, "
+            "SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS n_success, "
+            "SUM(CASE WHEN status!='success' THEN 1 ELSE 0 END) AS n_non_success "
+            "FROM challenges GROUP BY agent_name, problem_id"
+        )
+        metrics = {}
+        for r in ctx.conn.execute(q).fetchall():
+            an = r["agent_name"] if r["agent_name"] is not None else "-"
+            pid = r["problem_id"]
+            metrics[(an, pid)] = {
+                "mean_qc": r["mean_qc"],
+                "min_qc": r["min_qc"],
+                "n_success": int(r["n_success"] or 0),
+                "n_non_success": int(r["n_non_success"] or 0),
+            }
+        return render_template("analytics.html", problems=probs, agents=agents, metrics=metrics)
 
     @app.route("/minotaur/agent_count")
     @guard.require()

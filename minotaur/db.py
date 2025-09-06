@@ -68,6 +68,22 @@ def init_schema(conn: sqlite3.Connection) -> None:
         # Drop legacy tables if present; keep request logs across restarts
         conn.execute("DROP TABLE IF EXISTS trials;")
         conn.execute("DROP TABLE IF EXISTS settings;")
+
+        # Determine if challenges table needs reset (schema change)
+        need_reset = False
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(challenges)").fetchall()}
+            # Require new score_query_count column; if missing, drop and recreate
+            if "score_query_count" not in cols:
+                need_reset = True
+        except Exception:
+            need_reset = True
+
+        if need_reset:
+            # Drop dependent table first due to FK
+            conn.execute("DROP TABLE IF EXISTS challenge_requests;")
+            conn.execute("DROP TABLE IF EXISTS challenges;")
+
         # Challenges (one per agent's select-to-finish window)
         conn.execute(
             """
@@ -87,7 +103,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
               session_id TEXT,
               base_priority INTEGER,
               effective_priority INTEGER,
-              upstream_query_count INTEGER DEFAULT 0
+              upstream_query_count INTEGER DEFAULT 0,
+              score_query_count INTEGER
             );
             """
         )
