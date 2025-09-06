@@ -93,6 +93,10 @@ def parse_basic_auth(auth_header: Optional[str]) -> Optional[Tuple[str, str]]:
 class BasicAuthGuard:
     def __init__(self, users: List[User]):
         self._users: Dict[str, User] = {u.username: u for u in users}
+        # デフォルト非表示。AUTH_DEBUG=1 もしくは MINOTAUR_AUTH_DEBUG=1 のときのみ有効化。
+        v1 = os.getenv("AUTH_DEBUG", "").strip().lower()
+        v2 = os.getenv("MINOTAUR_AUTH_DEBUG", "").strip().lower()
+        self._debug = v1 in ("1", "true", "yes", "on") or v2 in ("1", "true", "yes", "on")
 
     def check(self, username: str, password: str) -> bool:
         u = self._users.get(username)
@@ -113,15 +117,21 @@ class BasicAuthGuard:
             def wrapper(*args, **kwargs):
                 auth_header = request.headers.get("Authorization")
                 creds = parse_basic_auth(auth_header)
-                # Debug logging as requested: print received user/pass
-                try:
-                    print(
-                        f"[auth debug] header_present={bool(auth_header)} creds={creds} users={[u for u in self._users.keys()]}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                except Exception:
-                    pass
+                # Debugログ（デフォルトOFF）
+                if self._debug:
+                    try:
+                        # パスワードは伏せ字にする
+                        dbg_creds = None
+                        if creds:
+                            u, p = creds
+                            dbg_creds = (u, "***")
+                        print(
+                            f"[auth debug] header_present={bool(auth_header)} creds={dbg_creds} users={[u for u in self._users.keys()]}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
                 if not creds or not self.check(*creds):
                     return Response(
                         status=401,

@@ -1,38 +1,68 @@
-<div id="status" class="bg-white border rounded p-3">
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div>
-      <h3 class="font-semibold">Running</h3>
-      {% if running %}
-        <div class="text-sm">
-          <div>ticket: <code>{{ running.ticket }}</code></div>
-          <div>agent: {{ running.agent_name or '-' }}</div>
-          <div>problem: {{ running.problem_id }}</div>
-          <div>lease: {{ running.lease_expire_at }}</div>
-        </div>
-      {% else %}
-        <div class="text-sm text-gray-500">None</div>
-      {% endif %}
-    </div>
-    <div>
-      <h3 class="font-semibold">Queued</h3>
-      <ul class="text-sm list-disc ml-4">
+<div id="status" class="space-y-6">
+  <!-- Running Card -->
+  <div class="bg-white border rounded p-4">
+    <h3 class="font-semibold mb-2">Running</h3>
+    {% if running %}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+        <div><span class="text-gray-500">ticket:</span> <code>{{ running.ticket }}</code></div>
+        <div><span class="text-gray-500">agent:</span> {{ running.agent_name or '-' }}</div>
+        <div><span class="text-gray-500">problem:</span> {{ running.problem_id }}</div>
+        <div><span class="text-gray-500">lease:</span> {{ running.lease_expire_at }}</div>
+      </div>
+      <div class="mt-3">
+        <form hx-post="/minotaur/cancel_running" hx-target="#status" hx-swap="outerHTML" onsubmit="return confirm('実行中の試行を取り消します。よろしいですか？');">
+          <button class="px-3 py-1 bg-red-600 text-white rounded" type="submit">キャンセル</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="text-sm text-gray-500">None</div>
+    {% endif %}
+  </div>
+
+  <!-- Queued Cards -->
+  <div class="bg-white border rounded p-4">
+    <h3 class="font-semibold mb-2">Queued</h3>
+    {% if queued %}
+      <div class="grid grid-cols-1 gap-2">
         {% for t in queued %}
-        <li><code>{{ t.ticket }}</code> | {{ t.problem_id }} | {{ t.agent_name or '-' }} | prio={{ t.effective_priority }}</li>
-        {% else %}
-        <li class="text-gray-500">None</li>
+        <div class="border rounded p-2 text-sm flex items-center justify-between">
+          <div class="truncate">
+            <div><span class="text-gray-500">ticket:</span> <code>{{ t.ticket }}</code></div>
+            <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }}</div>
+            <div><span class="text-gray-500">problem:</span> {{ t.problem_id }}</div>
+          </div>
+          <div class="text-xs text-gray-600">prio {{ t.effective_priority }}</div>
+        </div>
         {% endfor %}
-      </ul>
-    </div>
-    <div>
-      <h3 class="font-semibold">Recent</h3>
-      <ul class="text-sm list-disc ml-4">
-        {% for t in recent %}
-        <li><code>{{ t.ticket }}</code> | {{ t.status }} | {{ t.problem_id }} | {{ t.agent_name or '-' }}</li>
+      </div>
+    {% else %}
+      <div class="text-sm text-gray-500">None</div>
+    {% endif %}
+  </div>
+
+  <!-- Recent Cards (Collapsible) -->
+  <div class="bg-white border rounded p-4">
+    {% set rc = recent|length %}
+    <details>
+      <summary class="cursor-pointer select-none"><span class="font-semibold">Recent</span> <span class="text-gray-500 text-sm">({{ rc }})</span></summary>
+      <div class="mt-3">
+        {% if recent %}
+          <div class="grid grid-cols-1 gap-2">
+            {% for t in recent %}
+            <div class="border rounded p-2 text-sm flex items-center justify-between">
+              <div class="truncate">
+                <div><span class="text-gray-500">ticket:</span> <code>{{ t.ticket }}</code></div>
+                <div><span class="text-gray-500">status:</span> {{ t.status }}</div>
+                <div><span class="text-gray-500">problem:</span> {{ t.problem_id }}</div>
+                <div><span class="text-gray-500">agent:</span> {{ t.agent_name or '-' }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
         {% else %}
-        <li class="text-gray-500">None</li>
-        {% endfor %}
-      </ul>
-    </div>
+          <div class="text-sm text-gray-500">None</div>
+        {% endif %}
+      </div>
+    </details>
   </div>
 </div>
-

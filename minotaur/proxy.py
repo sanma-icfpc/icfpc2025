@@ -31,15 +31,22 @@ class UpstreamProxy:
         self.log = logger
         self.pool = SessionPool()
 
-    def _log(self, dir_: str, path: str, session: Optional[str], status_code: int, req_body: Dict[str, Any], res_body: Dict[str, Any]) -> None:
-        self.log.write({
+    def _log(self, dir_: str, path: str, session: Optional[str], status_code: int, req_body: Dict[str, Any], res_body: Dict[str, Any], meta: Optional[Dict[str, Any]] = None) -> None:
+        rec = {
             "dir": dir_,
             "path": path,
             "session": session,
             "status_code": status_code,
             "req_body": req_body,
             "res_body": res_body,
-        })
+        }
+        if meta:
+            # Surface selected agent metadata for analysis
+            if "agent_id" in meta:
+                rec["agent_id"] = meta.get("agent_id")
+            if "git_sha" in meta:
+                rec["agent_git"] = meta.get("git_sha")
+        self.log.write(rec)
 
     def _mock_select(self, body: Dict[str, Any]) -> Dict[str, Any]:
         # echo back problemName
@@ -50,9 +57,12 @@ class UpstreamProxy:
         plans = body.get("plans") or []
         results = []
         for p in plans:
-            # arbitrary: result length = len(p) or 1 if empty
-            L = len(p) if isinstance(p, str) and p else 1
-            # produce repeating zeros
+            # In local judge and expected API, explore result length = len(plan)+1
+            # (includes the starting room label). Keep labels simple (all zeros).
+            if isinstance(p, str) and p:
+                L = len(p) + 1
+            else:
+                L = 1
             results.append([0 for _ in range(L)])
         q = int(state.get("query_count", 0)) + len(plans) + 1
         state["query_count"] = q
@@ -66,7 +76,7 @@ class UpstreamProxy:
         # otherwise always false (no validation here)
         return {"correct": False}
 
-    def forward(self, path: str, session_id: str, body: Dict[str, Any], state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def forward(self, path: str, session_id: str, body: Dict[str, Any], state: Optional[Dict[str, Any]] = None, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         # MOCK path
         if self.s.is_mock:
             if path == "/select":
@@ -77,7 +87,7 @@ class UpstreamProxy:
                 out = self._mock_guess(body)
             else:
                 out = {"error": "unknown"}
-            self._log("mock", path, session_id, 200, body, out)
+            self._log("mock", path, session_id, 200, body, out, meta)
             return out
 
         if not self.s.official_base:
@@ -96,7 +106,7 @@ class UpstreamProxy:
             data = resp.json()
         except Exception:
             data = {"_raw": text}
-        self._log("fwd" if resp.ok else "fwd_err", path, session_id, resp.status_code, body2, data)
+        self._log("fwd" if resp.ok else "fwd_err", path, session_id, resp.status_code, body2, data, meta)
         if not resp.ok:
             raise UpstreamError(resp.status_code, data)
         return data
@@ -107,4 +117,3 @@ class UpstreamError(Exception):
         super().__init__(f"upstream {status}")
         self.status = status
         self.payload = payload
-

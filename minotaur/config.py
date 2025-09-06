@@ -3,7 +3,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
+
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover
+    yaml = None  # type: ignore
 
 
 def getenv_bool(name: str, default: bool = False) -> bool:
@@ -46,6 +51,8 @@ class Settings:
 
     # UI Auth
     auth_file: str
+    # Persisted settings YAML path
+    settings_file: str
 
     @property
     def is_mock(self) -> bool:
@@ -57,7 +64,7 @@ def load_settings_from_env() -> Settings:
         official_base=os.getenv("OFFICIAL_BASE") or None,
         mock=getenv_bool("MOCK", False),
         icfp_id=os.getenv("ICFP_ID"),
-        port=int(os.getenv("PORT", "5000")),
+        port=int(os.getenv("PORT", "19384")),
         log_dir=resolve_under_base(os.getenv("LOG_DIR") or "logs"),
         # Accept both legacy typo and correct var name; default under package dir
         db_path=(os.getenv("MINOTAUR_DB") or os.getenv("MINOTUAR_DB") or str(Path(BASE_DIR) / "coordinator.sqlite")),
@@ -70,4 +77,33 @@ def load_settings_from_env() -> Settings:
         max_qps=int(os.getenv("MAX_QPS", "0")),
         # Default to package path users.yaml; resolve relative paths under package dir
         auth_file=resolve_under_base(os.getenv("AUTH_FILE") or "users.yaml"),
+        settings_file=resolve_under_base(os.getenv("SETTINGS_FILE") or "settings.yaml"),
     )
+
+
+def load_persisted_settings(path: str) -> Dict[str, Any]:
+    try:
+        if yaml is None:
+            return {}
+        p = Path(path)
+        if not p.exists():
+            return {}
+        data = yaml.safe_load(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {str(k): v for k, v in data.items()}
+        return {}
+    except Exception:
+        return {}
+
+
+def save_persisted_settings(path: str, kv: Dict[str, Any]) -> None:
+    try:
+        if yaml is None:
+            return
+        p = Path(path)
+        # merge with existing
+        cur = load_persisted_settings(path)
+        cur.update(kv)
+        p.write_text(yaml.safe_dump(cur, allow_unicode=True, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass

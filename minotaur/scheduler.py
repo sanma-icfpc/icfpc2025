@@ -4,7 +4,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Callable
 
 from .config import Settings
 from . import db as dbm
@@ -26,6 +26,7 @@ class Coordinator:
         self.conn = conn
         self._stop = threading.Event()
         self._tick = 0
+        self.on_change: Optional[Callable[[str], None]] = None
 
     def start(self) -> None:
         t = threading.Thread(target=self._run, name="minotaur-sweeper", daemon=True)
@@ -46,6 +47,7 @@ class Coordinator:
 
     # Grant queued trial if no running exists
     def _grant_if_idle(self) -> None:
+        emitted: Optional[str] = None
         with dbm.tx(self.conn):
             run = dbm.query_one(self.conn, "SELECT id FROM trials WHERE status='running' LIMIT 1")
             if run is not None:
@@ -58,17 +60,31 @@ class Coordinator:
                 return
             sid = str(uuid.uuid4())
             lease = datetime.now(timezone.utc) + timedelta(seconds=self.s.trial_ttl_sec)
-            self.conn.execute(
+            cur = self.conn.execute(
                 "UPDATE trials SET status='running', started_at=?, lease_expire_at=?, session_id=? WHERE id=? AND status='queued'",
                 (utcnow_str(), lease.isoformat().replace("+00:00", "Z"), sid, row["id"]),
             )
+            if cur.rowcount:
+                emitted = "grant"
+        if emitted and self.on_change:
+            try:
+                self.on_change(emitted)
+            except Exception:
+                pass
 
     # Mark timed-out
     def _sweep_timeouts(self) -> None:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        emitted: Optional[str] = None
         with dbm.tx(self.conn):
-            self.conn.execute(
+            cur = self.conn.execute(
                 "UPDATE trials SET status='timeout', finished_at=? WHERE status='running' AND lease_expire_at < ?",
                 (now, now),
             )
-
+            if cur.rowcount:
+                emitted = "timeout"
+        if emitted and self.on_change:
+            try:
+                self.on_change(emitted)
+            except Exception:
+                pass

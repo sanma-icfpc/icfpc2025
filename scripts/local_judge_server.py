@@ -522,7 +522,7 @@ class JudgeHandler(BaseHTTPRequestHandler):
         return json_response(self, 200, {"correct": bool(ok)})
 
 
-def run(host: str = "127.0.0.1", port: int = 8009) -> None:
+def run(host: str = "0.0.0.0", port: int = 8009) -> None:
     server = ThreadingHTTPServer((host, port), JudgeHandler)
     print(f"LocalJudge listening on http://{host}:{port}")
     try:

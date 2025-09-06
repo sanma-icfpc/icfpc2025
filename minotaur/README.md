@@ -16,11 +16,11 @@
 ## Run
 - Preferred (CWD = `minotaur/`):
   - Dev server: `python -m minotaur.app` (requires running from repo root) or `uv run python -m minotaur.app` from repo root.
-  - Production (waitress): `uv run waitress-serve --listen=*:5000 run:app` or `python -m waitress --listen=*:5000 run:app`
+  - Production (waitress): `uv run waitress-serve --listen=*:19384 run:app` or `python -m waitress --listen=*:19384 run:app`
 - From repo root:
   - Dev server: `python -m minotaur.app`
-  - Production (waitress): `uv run waitress-serve --listen=*:5000 minotaur.app:app` or `python -m waitress --listen=*:5000 minotaur.app:app`
-- UI: open `http://localhost:5000/` (Basic Auth required)
+  - Production (waitress): `uv run waitress-serve --listen=*:19384 minotaur.app:app` or `python -m waitress --listen=*:19384 minotaur.app:app`
+- UI: open `http://localhost:19384/` (Basic Auth required)
 - Agents: call `/select`, `/explore`, `/guess` as in production against this server.
 
 ## Paths & Working Directory
@@ -32,9 +32,10 @@
 - `ICFP_ID`: Team id (required, never commit)
 - `OFFICIAL_BASE`: Upstream base URL; unset/empty enables MOCK mode
 - `MOCK`: `1` to force mock mode, `0` otherwise
-- `PORT`: Listen port (default `5000`)
+- `PORT`: Listen port (default `19384`)
 - `LOG_DIR`: JSONL logs directory (default `./logs`)
 - `MINOTAUR_DB`: SQLite path (default `./coordinator.sqlite`)
+- `SETTINGS_FILE`: YAML settings file (default `./minotaur/settings.yaml`)
 - `TRIAL_TTL_SEC`: Lease seconds per trial (default `60`)
 - Scheduling knobs: `BASE_PRIORITY_DEFAULT` (50), `AGEING_EVERY_MIN` (5), `AGEING_CAP` (100),
   `POST_SUCCESS_RETRY_CAP` (3), `POST_SUCCESS_PENALTY` (-10)
@@ -61,7 +62,7 @@
 ## Admin/Health (UI)
 - `GET /` → Dashboard (requires Basic Auth)
 - `GET /minotaur/status` → HTMX partial (running/queued/recent)
-- `POST /minotaur/settings` → Update runtime settings (subset) and persist to SQLite
+- `POST /minotaur/settings` → ランタイム設定を更新（サブセット）。YAML (`SETTINGS_FILE`) にのみ永続化。起動時にYAMLを読み込んで環境デフォルトを上書きします。
 - `GET /minotaur/healthz` → Basic health check
 
 ## Scheduling & Lease
@@ -93,7 +94,7 @@
 - `trials(id, ticket, problem_id, params_json, agent_name, git_sha,`
   `base_priority, effective_priority, status, enqueued_at, started_at, finished_at,`
   `lease_expire_at, session_id, upstream_query_count)`
-- `settings(key, value, updated_at)`
+  ※ 設定はSQLiteではなくYAML永続化（`SETTINGS_FILE`）。
 
 ## Sequence (blocking transparency)
 - Agent A → `/select`
@@ -104,7 +105,7 @@
 
 ## Deployment
 - Windows: `waitress-serve --port=%PORT% minotaur.app:app`
-- Linux/macOS: `gunicorn -k gthread -w 1 -b 0.0.0.0:${PORT:-5000} minotaur.app:app`
+- Linux/macOS: `gunicorn -k gthread -w 1 -b 0.0.0.0:${PORT:-19384} minotaur.app:app`
 - Back up `coordinator.sqlite` and `logs/` daily.
 
 ## TODO

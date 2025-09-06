@@ -5,13 +5,59 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Minotaur</title>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-</head>
-<body class="bg-gray-100 text-gray-900">
+  <style>
+    .navbar-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  </style>
+  </head>
+<body class="bg-gray-100 text-gray-900" hx-ext="sse" sse-connect="/minotaur/stream">
+  <!-- Navbar -->
+  <nav class="bg-white navbar-shadow">
+    <div class="max-w-5xl mx-auto px-4">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center space-x-3">
+          <div class="text-sm text-gray-700">
+            <span class="font-semibold lowercase tracking-wide">minotaur</span>
+            <span class="mx-1 text-gray-400">—</span>
+            <span class="">提出プロキシ & スケジューラ</span>
+          </div>
+        </div>
+        <div class="text-sm text-gray-600">
+          <span class="mr-1">接続中エージェント:</span>
+          <span id="agent-count" hx-get="/minotaur/agent_count" hx-trigger="load, sse:change" hx-swap="outerHTML" class="font-mono">0</span>
+          <button class="ml-4 px-3 py-1 bg-gray-800 text-white rounded" onclick="openModal()">設定</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page content -->
   <div class="max-w-5xl mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4">Minotaur</h1>
     {% block content %}{% endblock %}
   </div>
+
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black bg-opacity-50" onclick="closeModal()"></div>
+    <div class="relative max-w-2xl mx-auto mt-20 bg-white rounded shadow-lg">
+      <div class="flex items-center justify-between px-4 py-2 border-b">
+        <h3 class="font-semibold">設定</h3>
+        <button class="text-gray-600" onclick="closeModal()">✕</button>
+      </div>
+      <div id="modal-body" class="p-4" hx-get="/minotaur/settings" hx-trigger="revealed" hx-swap="innerHTML">
+        読み込み中…
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openModal() {
+      document.getElementById('modal').classList.remove('hidden');
+    }
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+    }
+  </script>
 </body>
 </html>
-

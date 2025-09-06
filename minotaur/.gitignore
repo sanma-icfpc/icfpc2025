@@ -18,8 +18,8 @@ logs/
 
 # Local secrets/config
 users.yaml
+settings.yaml
 .env
 
 # Tooling
 .python-version
-

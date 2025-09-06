@@ -56,16 +56,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uniq_single_running ON trials(status) WHERE status='running';"
         )
-        # idempotency intentionally unsupported; no table
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS settings (
-              key TEXT PRIMARY KEY,
-              value TEXT,
-              updated_at TEXT
-            );
-            """
-        )
+        # Drop deprecated settings table if it exists (migrate to YAML persistence)
+        try:
+            conn.execute("DROP TABLE IF EXISTS settings;")
+        except Exception:
+            pass
 
 
 def query_one(conn: sqlite3.Connection, sql: str, args: Iterable[Any] = ()) -> Optional[sqlite3.Row]:
