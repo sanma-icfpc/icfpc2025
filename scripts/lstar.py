@@ -19,8 +19,8 @@ import requests
 import sys
 import datetime
 
-# BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
-BASE_URL = "http://127.0.0.1:8009/"
+BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
+# BASE_URL = "http://127.0.0.1:8009/"
 ALPHABET = "012345"  # door labels
 
 # ---------- API Client ----------
