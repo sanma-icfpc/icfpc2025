@@ -213,6 +213,30 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             return jsonify({"error": "download_failed"}), 500
 
+    @app.route("/minotaur/db_info")
+    @guard.require()
+    def ui_db_info():
+        try:
+            dbp = ctx.s.db_path
+            if dbp.startswith("file:") and ("mode=memory" in dbp):
+                return jsonify({"in_memory": True}), 200
+            if not os.path.isfile(dbp):
+                return jsonify({"error": "not_found"}), 404
+            size_bytes = os.path.getsize(dbp)
+            size_mb = round(size_bytes / (1024 * 1024), 1)
+            try:
+                mtime = os.path.getmtime(dbp)
+            except Exception:
+                mtime = None
+            return jsonify({
+                "path": dbp,
+                "sizeBytes": int(size_bytes),
+                "sizeMB": float(size_mb),
+                "mtime": mtime,
+            })
+        except Exception:
+            return jsonify({"error": "stat_failed"}), 500
+
     @app.route("/minotaur/analytics")
     @guard.require()
     def ui_analytics():

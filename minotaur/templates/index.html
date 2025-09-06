@@ -47,7 +47,10 @@
       </div>
       <div>
         <h2 class="font-semibold mb-2">Database</h2>
-        <button class="px-3 py-1 bg-gray-600 text-white rounded" onclick="downloadDB()">DL SQLite3</button>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1 bg-gray-600 text-white rounded" onclick="downloadDB()">DL SQLite3</button>
+          <span id="db-size" class="text-xs text-gray-500">—</span>
+        </div>
       </div>
       <div>
         <h2 class="font-semibold mb-2">Server</h2>
@@ -59,6 +62,7 @@
 
 <script>
   let analyticsLoaded = false;
+  let analyticsInFlight = false;
   function updateURLTab(name) {
     const url = new URL(window.location.href);
     url.searchParams.set('tab', name);
@@ -101,6 +105,8 @@
     } else if (name === 'admin') {
       hide(running); hide(queued); hide(recent); hide(scheduler); hide(analytics); show(admin);
       setActiveBtn('tabbtn-admin');
+      // Refresh DB info when entering Admin
+      refreshDBInfoIfVisible();
     } else { // default scheduler
       hide(running); hide(queued); hide(recent); hide(analytics); hide(admin); show(scheduler);
       setActiveBtn('tabbtn-scheduler');
@@ -108,19 +114,57 @@
     updateURLTab(name);
   }
   function loadAnalytics() {
+    if (analyticsInFlight) return;
+    analyticsInFlight = true;
     fetch('/minotaur/analytics', { credentials: 'same-origin' })
       .then(r => r.text())
       .then(html => {
         const el = document.getElementById('analytics-pane');
-        el.innerHTML = html;
+        if (el) el.innerHTML = html;
         analyticsLoaded = true;
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { analyticsInFlight = false; });
+  }
+
+  function refreshAnalyticsIfVisible() {
+    const el = document.getElementById('tab-analytics');
+    if (el && !el.classList.contains('hidden')) {
+      // Only refresh after first load
+      if (!analyticsLoaded) { loadAnalytics(); return; }
+      loadAnalytics();
+    }
+  }
+
+  function loadDBInfo() {
+    const out = document.getElementById('db-size');
+    if (!out) return;
+    fetch('/minotaur/db_info', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        if (j && typeof j.sizeMB === 'number') {
+          out.textContent = `size: ${j.sizeMB.toFixed(1)} MB`;
+        } else if (j && j.in_memory) {
+          out.textContent = '(in-memory DB)';
+        } else {
+          out.textContent = '—';
+        }
+      })
+      .catch(() => { /* ignore */ });
+  }
+
+  function refreshDBInfoIfVisible() {
+    const el = document.getElementById('tab-admin');
+    if (el && !el.classList.contains('hidden')) {
+      loadDBInfo();
+    }
   }
   // Activate from URL parameter on first load
   document.addEventListener('DOMContentLoaded', function() {
     const tab = getURLTab() || 'scheduler';
     switchTab(tab);
+    // Preload DB info if Admin is the initial tab
+    refreshDBInfoIfVisible();
   });
 </script>
 {% endblock %}

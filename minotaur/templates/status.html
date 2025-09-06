@@ -71,7 +71,7 @@
     {% if queued %}
       <div class="grid grid-cols-1 gap-2">
         {% for t in queued %}
-        <div class="border rounded p-2 text-sm relative">
+        <div class="border rounded p-2 pr-12 text-sm relative">
           <div class="absolute top-2 right-2">
             <div class="w-7 h-7 rounded-md border overflow-hidden">
               <svg width="28" height="28" data-jdenticon-value="{{ t.agent_name or '*' }}"></svg>
@@ -84,8 +84,10 @@
               <span class="truncate">{{ t.problem_id }}</span>
               <span class="ml-3 text-gray-500">agent:</span>
               {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
+              <span class="ml-3 text-gray-500">prio:</span>
+              <span class="font-mono text-xs">{{ t.effective_priority }}</span>
             </div>
-            <div class="text-xs text-gray-600">prio {{ t.effective_priority }}</div>
+            <div class="text-xs text-gray-600"></div>
           </div>
           <div class="mt-1 text-xs text-gray-600">
             <span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}

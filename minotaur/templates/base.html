@@ -251,6 +251,8 @@
         es.addEventListener('change', function(_) {
           if (!autoUpdateEnabled) return;
           loadStatus(); updateAgentCount(); refreshPriorityStatuses();
+          try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
+          try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
         });
         es.onerror = function(_) { if (autoUpdateEnabled) setSSEStatus(false); };
       } catch (_) {}
@@ -280,6 +282,8 @@
         startSSE();
         // kick a refresh immediately when turning ON
         loadStatus(); updateAgentCount(); refreshPriorityStatuses();
+        try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
+        try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
       } else {
         stopSSE();
         // reflect paused state in badge
