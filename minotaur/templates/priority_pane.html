@@ -35,7 +35,7 @@
           <td class="p-1">
             {% if r.name != '*' %}
             {% set pinned = r.pinned or 0 %}
-            <button class="px-2 py-1 text-xs rounded {{ 'bg-yellow-500 text-white' if pinned else 'bg-gray-200' }}" onclick="togglePin('{{ r.name }}', {{ 1 if not pinned else 0 }}); return false;">{{ 'Unpin' if pinned else 'Pin' }}</button>
+            <button data-pin class="px-2 py-1 text-xs rounded {{ 'bg-yellow-500 text-white' if pinned else 'bg-gray-200' }}" onclick="togglePin('{{ r.name }}', {{ 1 if not pinned else 0 }}); return false;">{{ 'Unpin' if pinned else 'Pin' }}</button>
             {% else %}
             <span class="text-gray-400">—</span>
             {% endif %}

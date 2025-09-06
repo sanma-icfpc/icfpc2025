@@ -31,14 +31,16 @@
           <div class="text-sm text-gray-700">
             <span class="font-semibold lowercase tracking-wide">minotaur</span>
             <span class="mx-1 text-gray-400">—</span>
-            <span class="">提出プロキシ & スケジューラ</span>
+            <span class="">Proxy & Scheduler</span>
           </div>
         </div>
         <div class="text-sm text-gray-600 flex items-center space-x-2">
-          <span>接続中エージェント:</span>
+          <span>Connected Agents:</span>
           <span id="agent-count" class="font-mono">0</span>
+          <span>Server Status:</span>
           <span id="sse-status" class="badge badge-offline ml-2">🔴 OFFLINE</span>
           <button class="ml-4 px-3 py-1 bg-gray-800 text-white rounded" onclick="openModal()">設定</button>
+          <button class="ml-2 px-3 py-1 bg-red-700 text-white rounded" onclick="shutdownServer(event)">サーバを終了</button>
         </div>
       </div>
     </div>
@@ -191,6 +193,14 @@
       fetch('/minotaur/cancel_running', { method: 'POST', credentials: 'same-origin' })
         .then(() => { loadStatus(); })
         .catch(() => { loadStatus(); });
+      return false;
+    }
+    function shutdownServer(ev) {
+      if (ev) ev.preventDefault();
+      if (!confirm('本当にサーバを終了しますか？\n(確認後にプロセスが停止します)')) return false;
+      fetch('/minotaur/shutdown', { method: 'POST', credentials: 'same-origin' })
+        .then(() => { /* server will exit shortly */ })
+        .catch(() => {});
       return false;
     }
 

@@ -145,7 +145,7 @@ def register_priority_routes(app, ctx: AppCtx) -> None:
                 ctx.coord.on_change("priorities_pin")
             except Exception:
                 pass
-        return jsonify({"rows": rows})
+        return jsonify({"ok": True})
 
     @app.route("/minotaur/priorities/delete", methods=["POST"])
     @guard.require()

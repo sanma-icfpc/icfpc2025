@@ -7,6 +7,7 @@ from flask import Response, jsonify, make_response, render_template, request, st
 
 from .context import AppCtx
 from .sched_fair import accumulate_service
+import threading, os, time as _time
 
 
 def _fmt_ts(ts: str) -> str:
@@ -235,3 +236,15 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             recent=recent,
             recent_flows=recent_flows_map,
         )
+
+    @app.route("/minotaur/shutdown", methods=["POST"])
+    @guard.require()
+    def ui_shutdown():
+        def _killer():
+            try:
+                _time.sleep(0.2)
+            except Exception:
+                pass
+            os._exit(0)
+        threading.Thread(target=_killer, daemon=True).start()
+        return jsonify({"ok": True})
