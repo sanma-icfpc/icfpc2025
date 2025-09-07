@@ -31,8 +31,8 @@ TIMEOUT_SEC = 6000
 
 class AedificiumClient:
     def __init__(self, base_url: str = os.getenv("BASE_URL", BASE_URL), team_id: Optional[str] = None):
-        print(f"{self.base_url=}")
         self.base_url = base_url.rstrip("/")
+        print(f"{self.base_url=}")
         self.id = team_id
 
     def _post(self, path: str, payload: Dict) -> Dict:
