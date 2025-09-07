@@ -19,8 +19,8 @@ import random
 import requests
 
 
-BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
-# BASE_URL = "http://tk2-401-41624.vs.sakura.ne.jp:19384/"
+# BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
+BASE_URL = "http://tk2-401-41624.vs.sakura.ne.jp:19384/"
 DOORS = "012345"  # door labels as characters
 AGENT_NAME = 'nodchip:lstar2'
 AGENT_ID = str(os.getpid())
@@ -29,7 +29,7 @@ TIMEOUT_SEC = 6000
 # ==== API client ==== #
 
 class AedificiumClient:
-    def __init__(self, base_url: str = BASE_URL, team_id: Optional[str] = None):
+    def __init__(self, base_url: str = os.getenv("BASE_URL", BASE_URL), team_id: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.id = team_id
 
