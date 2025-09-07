@@ -1,7 +1,7 @@
 <div class="bg-white border rounded p-4">
   <div class="flex items-center justify-between mb-3">
     <h3 class="font-semibold">Summary of queryCount per Agents</h3>
-    <div class="text-xs text-gray-500">min/mean from successful runs only</div>
+    <div class="text-xs text-gray-500">min/mean from correct runs only</div>
   </div>
   <div class="overflow-x-auto">
     <table class="min-w-full table-auto text-sm divide-y divide-gray-200">
@@ -23,8 +23,8 @@
               {% if m %}
                 {% set mean = m.mean_qc %}
                 {% set minv = m.min_qc %}
-                {% set ns = m.n_success %}
-                {% set nn = m.n_non_success %}
+                {% set ns = m.n_correct %}
+                {% set nn = m.n_incorrect %}
                 <div class="text-xs leading-tight">
                   <span class="text-gray-400">min:</span>
                   <span class="font-mono">{{ minv if minv is not none else '-' }}</span>
@@ -32,9 +32,9 @@
                   <span class="font-mono">{{ '%.1f' % mean if mean is not none else '-' }}</span>
                 </div>
                 <div class="text-xs leading-tight">
-                  <span class="text-gray-400">pass:</span>
+                  <span class="text-gray-400">correct:</span>
                   <span class="font-mono">{{ ns }}</span>
-                  <span class="text-gray-400">, fail:</span>
+                  <span class="text-gray-400">, incorrect:</span>
                   <span class="font-mono">{{ nn }}</span>
                 </div>
               {% else %}

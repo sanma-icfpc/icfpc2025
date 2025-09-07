@@ -1,6 +1,6 @@
 # Summary
 minotaurはジャッジプロトコルのプロキシとして振る舞うことで、任意の言語・OS・マシンで実行される解法プログラム（エージェントと呼びます）からの要求をスケジューリングし、ステートフルな本番ジャッジサーバとのやりとりを直列化します。
-スケジューリングはデフォルトで一連のやりとり(/select ~ /guess成功)単位での先着順ですが、優先度を設定したり、常に優先する(Pin)や差し込む(Select as Next)こともできます。
+スケジューリングはデフォルトで一連のやりとり（/select から /guess 提出まで）単位での先着順です。/guess は正誤に関わらず挑戦を終了します（正解なら status=correct、不正解なら status=incorrect）。優先度を設定したり、常に優先する (Pin) や差し込む (Select as Next) こともできます。
 また仲介したやりとりを保存しており、簡易的な解析を提供します。SQLiteファイルをダウンロードすることで独自の解析も可能です。
 
 # Run
@@ -84,7 +84,8 @@ print("explore:", status, ex)
 
 # 3) Submit a guess (example builds a trivial 1-room guess like the local judge demo)
 #    Switch to the 1-room toy problem and auto-solve it:
-#    If your guess was correct, Minotaur will mark your challenge as success and give a chance to another agent in the queue.
+#    Note: /guess を呼ぶと正誤に関わらず挑戦は終了扱いになります（正解時は correct、
+#    不正解時は incorrect として記録）。次のエージェントにスロットが解放されます。
 status, _ = post_json("/select", {"problemName": "superdumb", "id": "ignored"})
 status, ex = post_json("/explore", {"plans": ["0"]})
 label = ex.get("results", [[0]])[0][0]
@@ -98,7 +99,7 @@ guess = {
 status, g = post_json("/guess", {"map": guess})
 print("guess:", status, g)
 
-# 4) If your solver decides to give up mid-run,
+# 4) If your solver decides to give up mid-run without calling /guess,
 #    you can notify Minotaur so the slot is freed immediately.
 #    This endpoint does not exist on the official server.
 try:

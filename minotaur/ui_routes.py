@@ -150,12 +150,12 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         # Count total recent for pagination
         if recent_filter:
             recent_total_row = ctx.conn.execute(
-                "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') AND (COALESCE(agent_name,'') LIKE ? OR COALESCE(problem_id,'') LIKE ?)",
+                "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') AND (COALESCE(agent_name,'') LIKE ? OR COALESCE(problem_id,'') LIKE ?)",
                 (f"%{recent_filter}%", f"%{recent_filter}%"),
             ).fetchone()
         else:
             recent_total_row = ctx.conn.execute(
-                "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running')"
+                "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running')"
             ).fetchone()
         recent_total = int(recent_total_row["c"]) if recent_total_row else 0
         recent_pages = max(1, (recent_total + page_size - 1) // page_size)
@@ -164,12 +164,12 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             offset = (recent_page - 1) * page_size
         if recent_filter:
             recent = ctx.conn.execute(
-                "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') AND (COALESCE(agent_name,'') LIKE ? OR COALESCE(problem_id,'') LIKE ?) ORDER BY finished_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') AND (COALESCE(agent_name,'') LIKE ? OR COALESCE(problem_id,'') LIKE ?) ORDER BY finished_at DESC LIMIT ? OFFSET ?",
                 (f"%{recent_filter}%", f"%{recent_filter}%", page_size, offset),
             ).fetchall()
         else:
             recent = ctx.conn.execute(
-                "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT ? OFFSET ?",
                 (page_size, offset),
             ).fetchall()
         running_flows = _flows(ctx, int(running["id"])) if running else []
@@ -354,10 +354,10 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         # Build metrics map
         q = (
             "SELECT agent_name, problem_id, "
-            "AVG(CASE WHEN status='success' THEN score_query_count END) AS mean_qc, "
-            "MIN(CASE WHEN status='success' THEN score_query_count END) AS min_qc, "
-            "SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS n_success, "
-            "SUM(CASE WHEN status!='success' THEN 1 ELSE 0 END) AS n_non_success "
+            "AVG(CASE WHEN status IN ('correct','success') THEN score_query_count END) AS mean_qc, "
+            "MIN(CASE WHEN status IN ('correct','success') THEN score_query_count END) AS min_qc, "
+            "SUM(CASE WHEN status IN ('correct','success') THEN 1 ELSE 0 END) AS n_correct, "
+            "SUM(CASE WHEN status IN ('incorrect','finished_guess') THEN 1 ELSE 0 END) AS n_incorrect "
             "FROM challenges GROUP BY agent_name, problem_id"
         )
         metrics = {}
@@ -367,8 +367,8 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             metrics[(an, pid)] = {
                 "mean_qc": r["mean_qc"],
                 "min_qc": r["min_qc"],
-                "n_success": int(r["n_success"] or 0),
-                "n_non_success": int(r["n_non_success"] or 0),
+                "n_correct": int(r["n_correct"] or 0),
+                "n_incorrect": int(r["n_incorrect"] or 0),
             }
         return render_template("analytics.html", problems=probs, agents=agents, metrics=metrics)
 
@@ -422,7 +422,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20"
         ).fetchall()
         recent = ctx.conn.execute(
-            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT 20"
+            "SELECT * FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT 20"
         ).fetchall()
         running_flows = _flows(ctx, int(running["id"])) if running else []
         queued_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in queued}
@@ -498,7 +498,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20"
         ).fetchall()
         recent = ctx.conn.execute(
-            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT 20"
+            "SELECT * FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT 20"
         ).fetchall()
         running_flows = _flows(ctx, int(running["id"])) if running else []
         queued_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in queued}

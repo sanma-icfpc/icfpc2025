@@ -150,20 +150,38 @@ def register_api_routes(app, ctx: AppCtx) -> None:
                 _log_ch_req(ctx, ch_id, "guess", rk, "from_upstream", int(ue.status), body, ue.payload)
                 ctx.bus.emit("change")
             return jsonify({"error": "upstream_error", "detail": ue.payload}), 502
-        if bool(out.get("correct")):
-            with ctx.conn:
-                rr = ctx.conn.execute("SELECT id, agent_name, started_at, upstream_query_count FROM challenges WHERE status='running' LIMIT 1").fetchone()
-                # Record final score_query_count as the latest upstream_query_count at success time
-                final_qc = int(rr["upstream_query_count"]) if rr and rr["upstream_query_count"] is not None else None
+        # Regardless of correctness, upstream /guess ends the selection window.
+        # Mark the challenge finished. Use 'correct' for correct guesses; otherwise 'incorrect'.
+        is_correct = bool(out.get("correct"))
+        with ctx.conn:
+            rr = ctx.conn.execute(
+                "SELECT id, agent_name, started_at, upstream_query_count FROM challenges WHERE status='running' LIMIT 1"
+            ).fetchone()
+            final_qc = int(rr["upstream_query_count"]) if rr and rr["upstream_query_count"] is not None else None
+            if is_correct:
                 ctx.conn.execute(
-                    "UPDATE challenges SET status='success', finished_at=?, score_query_count=? WHERE status='running'",
+                    "UPDATE challenges SET status='correct', finished_at=?, score_query_count=? WHERE status='running'",
                     (utcnow_str(), final_qc),
                 )
-            try:
-                if rr is not None:
-                    accumulate_service(ctx.conn, ctx.logger, ctx.s.base_priority_default, rr["agent_name"], rr["started_at"], utcnow_str())
-            except Exception:
-                pass
+            else:
+                # Not correct: still finish the challenge window
+                ctx.conn.execute(
+                    "UPDATE challenges SET status='incorrect', finished_at=? WHERE status='running'",
+                    (utcnow_str(),),
+                )
+        # Accumulate fair-share service time for this run
+        try:
+            if rr is not None:
+                accumulate_service(
+                    ctx.conn,
+                    ctx.logger,
+                    ctx.s.base_priority_default,
+                    rr["agent_name"],
+                    rr["started_at"],
+                    utcnow_str(),
+                )
+        except Exception:
+            pass
         _touch_lease(ctx)
         if ch_id is not None:
             _log_ch_req(ctx, ch_id, "guess", rk, "from_upstream", 200, body, out)
