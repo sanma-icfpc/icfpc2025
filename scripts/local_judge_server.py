@@ -603,6 +603,18 @@ if __name__ == "__main__":
                 time.sleep(_DELAY_SEC)
             return resp.status, data
 
+        def maybe_giveup_on_failed_guess(guess_resp: Dict):
+            try:
+                ok = bool(guess_resp.get("correct"))
+            except Exception:
+                ok = False
+            if not ok:
+                print("Guess incorrect; demo: posting /minotaur_giveup to Minotaur (if available).\n")
+                try:
+                    post_json("/minotaur_giveup", {})
+                except Exception as e:
+                    print(f"/minotaur_giveup call failed: {e}")
+
         print(f"Client test against http://{target_host}:{target_port}\n")
         # 1) select with deterministic seed (id ignored server-side)
         _, sel = post_json("/select", {"id": "ignored", "problemName": "probatio", "seed": 42})
@@ -619,6 +631,9 @@ if __name__ == "__main__":
             ],
         }
         _, g1 = post_json("/guess", {"id": "ignored", "map": bad_guess})
+        # If guess failed, request giveup on Minotaur for demo purposes
+        if isinstance(g1, dict):
+            maybe_giveup_on_failed_guess(g1)
         # 4) ensure reset works
         _, sel2 = post_json("/select", {"id": "ignored", "problemName": "primus", "seed": 7})
         _, ex2 = post_json("/explore", {"id": "ignored", "plans": ["012345"]})
@@ -637,6 +652,8 @@ if __name__ == "__main__":
                 ],
             }
             _, g2 = post_json("/guess", {"id": "ignored", "map": guess_superdumb})
+            if isinstance(g2, dict):
+                maybe_giveup_on_failed_guess(g2)
             print("Expected correct=true for superdumb.")
         print("Client test completed.")
         sys.exit(0)

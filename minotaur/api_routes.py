@@ -84,6 +84,49 @@ def register_api_routes(app, ctx: AppCtx) -> None:
 
 
 
+    @app.route("/minotaur_giveup", methods=["POST"])
+    def minotaur_giveup_route():
+        """Cancel the currently running challenge if its agent_name matches X-Agent-Name.
+
+        This is a Minotaur-only helper (not part of the official API) to allow
+        an agent to voluntarily give up its current run without enqueueing another select.
+        """
+        agent_name = request.headers.get("X-Agent-Name") or None
+        if not agent_name:
+            return jsonify({"ok": False, "error": "missing_agent_name"}), 400
+        now = utcnow_str()
+        cancelled = False
+        cur = None
+        with ctx.conn:
+            cur = ctx.conn.execute(
+                "SELECT id, agent_name, started_at FROM challenges WHERE status='running' AND agent_name=? LIMIT 1",
+                (agent_name,),
+            ).fetchone()
+            if cur is not None:
+                try:
+                    ctx.conn.execute(
+                        "INSERT INTO challenge_requests(challenge_id, api, req_key, phase, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?,?,?)",
+                        (int(cur["id"]), "event", "cancel", "cancel", 0, "{}", "{}", now),
+                    )
+                except Exception:
+                    pass
+                ctx.conn.execute(
+                    "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
+                    (now, int(cur["id"])),
+                )
+                cancelled = True
+        if cancelled:
+            try:
+                accumulate_service(ctx.conn, ctx.logger, ctx.s.base_priority_default, cur["agent_name"], cur["started_at"], now)
+            except Exception:
+                pass
+            if ctx.bus:
+                try:
+                    ctx.bus.emit("cancel")
+                except Exception:
+                    pass
+        return jsonify({"ok": True, "cancelled": bool(cancelled)})
+
     @app.route("/guess", methods=["POST"])
     def guess_route():
         body = request.get_json(silent=True) or {}
