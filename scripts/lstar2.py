@@ -567,4 +567,4 @@ if __name__ == "__main__":
             except requests.HTTPError as e:
                 print("HTTP error:", e.response.text if hasattr(e, "response") else str(e))
             except Exception as ex:
-                print("Error:", ex)
+                print("Error:", ex.format_exc())
