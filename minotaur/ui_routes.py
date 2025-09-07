@@ -283,18 +283,47 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
     def ui_db_info():
         try:
             dbp = ctx.s.db_path
+            # In-memory (shared) URI
             if dbp.startswith("file:") and ("mode=memory" in dbp):
                 return jsonify({"in_memory": True}), 200
-            if not os.path.isfile(dbp):
+            # If it's a file: URI, try extracting the path up to '?'
+            fs_path = dbp
+            if dbp.startswith("file:"):
+                fs_path = dbp[5:]
+                q = fs_path.find('?')
+                if q != -1:
+                    fs_path = fs_path[:q]
+                # Normalize relative paths under package dir
+                if not os.path.isabs(fs_path):
+                    from .config import BASE_DIR
+                    fs_path = os.path.join(BASE_DIR, fs_path)
+            if not os.path.isfile(fs_path):
                 return jsonify({"error": "not_found"}), 404
-            size_bytes = os.path.getsize(dbp)
+            # Sum main db + WAL/SHM if present (WAL mode stores most data in -wal)
+            size_bytes = 0
+            try:
+                size_bytes += os.path.getsize(fs_path)
+            except Exception:
+                pass
+            wal = fs_path + "-wal"
+            shm = fs_path + "-shm"
+            try:
+                if os.path.isfile(wal):
+                    size_bytes += os.path.getsize(wal)
+            except Exception:
+                pass
+            try:
+                if os.path.isfile(shm):
+                    size_bytes += os.path.getsize(shm)
+            except Exception:
+                pass
             size_mb = round(size_bytes / (1024 * 1024), 1)
             try:
-                mtime = os.path.getmtime(dbp)
+                mtime = os.path.getmtime(fs_path)
             except Exception:
                 mtime = None
             return jsonify({
-                "path": dbp,
+                "path": fs_path,
                 "sizeBytes": int(size_bytes),
                 "sizeMB": float(size_mb),
                 "mtime": mtime,

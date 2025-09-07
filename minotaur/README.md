@@ -7,12 +7,34 @@ minotaurはジャッジプロトコルのプロキシとして振る舞うこと
 `uv run waitress-serve --listen=*:19384 run:app`
 
 # Client-Side
-local_judge_server.py を参照し、以下のようにします
-- X-Agent-Name HTTPヘッダを付加: 解法を区別できる名前名付けます。例) t-suzuki:bruteforce-1
-- X-Agent-ID HTTPヘッダを付加: 解法が同一であっても実行インスタンスを区別できる名前を付けます。例) プロセスID
-- HTTPリクエストのタイムアウトを無制限または長時間に設定します。minotaurはPOST /selectをいつでも受付ますが、自分の番が来るまでその応答は待たされます。
+local_judge_server.py を参照し、すべての POST リクエストで以下を設定します
+- X-Agent-Name HTTP ヘッダを付加: 解法を区別できる名前を付けます（例: t-suzuki:bruteforce-1）
+- X-Agent-ID HTTP ヘッダを付加: 解法が同一であっても実行インスタンスを区別できる名前を付けます（例: プロセス ID）
+- HTTP リクエストのタイムアウトを無制限または長時間に設定します。Minotaur は POST /select をいつでも受け付けますが、自分の番が来るまでその応答は待たされます。
 
-## サンプルコード(非実動)
+### Minotaur専用: /minotaur_giveup
+本番サーバには存在しない、Minotaur専用の補助APIです。エージェントが「この挑戦を自発的にやめる」ことを明示できます。
+利用は任意ですが、Minotaur側でタイムアウトするまでの間のアイドルを減らすため、積極的に実施することを推奨します。
+
+- エンドポイント: `POST /minotaur_giveup`
+- ボディ: 何でも可（空オブジェクト `{}` で十分）
+- 応答例: `{ "ok": true, "cancelled": true }`（対象がない場合は `cancelled:false`）
+- 作用: 実行中の同一 `X-Agent-Name` の挑戦を即座に終了（内部状態は `terminated_running`）。キュー中のジョブには影響しません。
+
+利用例（Python）:
+```python
+import requests
+
+base = "http://127.0.0.1:19384"
+headers = {
+    "Content-Type": "application/json",
+    "X-Agent-Name": "yourname:strategy-1",
+}
+res = requests.post(f"{base}/minotaur_giveup", json={}, headers=headers, timeout=10)
+print(res.status_code, res.json())
+```
+
+## サンプルコード（非実動）
 ```python
 # Minimal client for Minotaur (ICFPC 2025)
 # Extracted and arranged from scripts/local_judge_server.py client-test
@@ -62,6 +84,7 @@ print("explore:", status, ex)
 
 # 3) Submit a guess (example builds a trivial 1-room guess like the local judge demo)
 #    Switch to the 1-room toy problem and auto-solve it:
+#    If your guess was correct, Minotaur will mark your challenge as success and give a chance to another agent in the queue.
 status, _ = post_json("/select", {"problemName": "superdumb", "id": "ignored"})
 status, ex = post_json("/explore", {"plans": ["0"]})
 label = ex.get("results", [[0]])[0][0]
@@ -74,6 +97,14 @@ guess = {
 }
 status, g = post_json("/guess", {"map": guess})
 print("guess:", status, g)
+
+# 4) If your solver decides to give up mid-run,
+#    you can notify Minotaur so the slot is freed immediately.
+#    This endpoint does not exist on the official server.
+try:
+    _ = post_json("/minotaur_giveup", {})  ###################### HERE
+except Exception:
+    pass
 
 ```
 
