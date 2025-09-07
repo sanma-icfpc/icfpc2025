@@ -11,6 +11,7 @@ from . import db as dbm
 import threading, os, time as _time
 import platform as _platform
 import sys as _sys
+import time as _time2
 
 
 def _fmt_ts(ts: str) -> str:
@@ -112,6 +113,10 @@ def _flows(ctx: AppCtx, ch_id: int):
 
 def register_ui_routes(app, ctx: AppCtx) -> None:
     guard = ctx.ui_guard
+
+    # Simple in-process sampler for thread CPU activity to estimate idle duration
+    # Maps OS thread id -> { 'cpu': float, 'last': float }
+    _THREAD_SAMPLES: Dict[int, Dict[str, float]] = {}
 
     @app.route("/")
     @guard.require()
@@ -482,7 +487,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             pass
 
-        out = {"pid": pid, "platform": _platform.system(), "threads": [], "summary": {}}
+        out = {"pid": pid, "platform": _platform.system(), "threads": [], "summary": {}, "ts": _time2.time()}
 
         def _merge_py(meta: dict, tid: int) -> dict:
             pt = py_threads.get(int(tid)) or {}
@@ -590,4 +595,32 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                     out["summary"] = {"count": len(out["threads"]) }
                 except Exception:
                     pass
+        # Compute simple running/idle estimate based on CPU time deltas across calls
+        now = float(out["ts"]) if isinstance(out.get("ts"), (int, float)) else _time2.time()
+        try:
+            for t in out["threads"]:
+                tid = t.get("id")
+                if isinstance(tid, int):
+                    cpu = float(t.get("cpu_time_sec") or 0.0)
+                    prev = _THREAD_SAMPLES.get(tid)
+                    # initialize last progression time as now if unseen
+                    if prev is None:
+                        _THREAD_SAMPLES[tid] = {"cpu": cpu, "last": now}
+                        t["statusKind"] = "unknown"
+                        t["idleForSec"] = 0.0
+                    else:
+                        progressed = (cpu > prev.get("cpu", 0.0) + 1e-6)
+                        if progressed:
+                            prev["cpu"] = cpu
+                            prev["last"] = now
+                            t["statusKind"] = "running"
+                            t["idleForSec"] = 0.0
+                        else:
+                            t["statusKind"] = "waiting"
+                            t["idleForSec"] = max(0.0, now - float(prev.get("last", now)))
+                else:
+                    t["statusKind"] = t.get("statusKind") or "unknown"
+                    t["idleForSec"] = t.get("idleForSec") or 0.0
+        except Exception:
+            pass
         return jsonify(out)

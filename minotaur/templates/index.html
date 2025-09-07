@@ -59,6 +59,18 @@
           <span id="threads-count" class="font-mono">—</span>
           <span id="threads-states" class="text-xs text-gray-500"></span>
         </div>
+        <div class="mt-2 text-xs text-gray-600">
+          <div class="px-2 py-1 bg-gray-50 border border-b-0 rounded-t flex items-center gap-3 font-medium">
+            <span class="w-16">ID</span>
+            <span class="flex-1">Name / Meta</span>
+            <span class="w-24">Status</span>
+            <span class="w-20 text-right">Idle</span>
+            <span class="w-20 text-right">CPU(s)</span>
+          </div>
+        </div>
+        <div id="threads-list" class="max-h-72 overflow-auto border rounded-t-none rounded-b divide-y text-xs">
+          <div class="p-2 text-gray-400">No data</div>
+        </div>
       </div>
       <div>
         <h2 class="font-semibold mb-2">Server</h2>
@@ -171,6 +183,7 @@
   function loadThreadsInfo() {
     const cnt = document.getElementById('threads-count');
     const stat = document.getElementById('threads-states');
+    const list = document.getElementById('threads-list');
     if (!cnt) return;
     fetch('/minotaur/threads_os', { credentials: 'same-origin' })
       .then(r => r.json())
@@ -187,12 +200,36 @@
               stat.textContent = '';
             }
           }
+          if (list) {
+            if (!threads.length) { list.innerHTML = '<div class="p-2 text-gray-400">No data</div>'; return; }
+            const rows = threads.map(t => {
+              const id = (t.id != null) ? t.id : '-';
+              const n = (t.py_name || t.name || '').toString();
+              const st = (t.state || '').toString();
+              const wchan = (t.wchan || '').toString();
+              const kind = (t.statusKind || '').toString();
+              const idle = (typeof t.idleForSec === 'number') ? t.idleForSec : 0;
+              const idleStr = (kind === 'waiting' && idle > 0) ? `${idle.toFixed(1)}s` : '';
+              const meta = [st ? st : null, wchan ? `w:${wchan}` : null].filter(Boolean).join(' ');
+              const cpu = (typeof t.cpu_time_sec === 'number') ? t.cpu_time_sec : 0;
+              const cpuStr = cpu ? cpu.toFixed(2) : '0.00';
+              return `<div class="p-2 flex items-center gap-3">
+                <span class="w-16 font-mono">${id}</span>
+                <span class="flex-1 truncate">${n || '(unnamed)'}${meta ? ' — ' + meta : ''}</span>
+                <span class="w-24 text-gray-700">${kind || ''}</span>
+                <span class="w-20 text-gray-500 text-right">${idleStr}</span>
+                <span class="w-20 text-gray-500 text-right">${cpuStr}</span>
+              </div>`;
+            }).join('');
+            list.innerHTML = rows;
+          }
         } catch (_) {
           if (cnt) cnt.textContent = '—';
           if (stat) stat.textContent = '';
+          if (list) list.innerHTML = '<div class="p-2 text-gray-400">Error</div>';
         }
       })
-      .catch(() => { if (cnt) cnt.textContent = '—'; if (stat) stat.textContent = ''; });
+      .catch(() => { if (cnt) cnt.textContent = '—'; if (stat) stat.textContent = ''; if (list) list.innerHTML = '<div class="p-2 text-gray-400">Error</div>'; });
   }
 
   function refreshThreadsIfVisible() {

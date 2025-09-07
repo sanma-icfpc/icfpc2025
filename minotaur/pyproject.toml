@@ -10,6 +10,7 @@ dependencies = [
     "PyYAML>=6.0",
     "waitress>=3.0.2",
     "pytest>=8.4.2",
+    "psutil>=7.0.0",
 ]
 
 [tool.pytest.ini_options]
