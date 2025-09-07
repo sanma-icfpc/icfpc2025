@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ICFPC2025 Leaderboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Date adapter for Chart.js time scale -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <script src="/static/main.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    header { padding: 10px; background: #333; color: white; }
+    #controls { margin: 10px; }
+    #container { display: flex; }
+    #chart-container { flex: 3; padding: 10px; }
+    #table-container { flex: 1; overflow-y: auto; max-height: 90vh; padding: 10px; border-left: 1px solid #ccc; }
+    /* Let Chart.js control height for correct aspect ratio. */
+    canvas { width: 100% !important; max-height: 80vh; }
+    textarea { width: 100%; height: 50px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 4px; font-size: 12px; }
+    .highlight { background: yellow; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ICFPC2025 Leaderboard</h1>
+  </header>
+  <div id="controls">
+    <label>Highlight Teams (comma separated):</label><br>
+    <textarea id="highlightInput"></textarea>
+    <div style="margin-top:8px;">
+      <label><input type="checkbox" id="filterMode"> Filter to selection</label>
+    </div>
+  </div>
+  <div id="container">
+    <div id="chart-container">
+      <canvas id="leaderboardChart"></canvas>
+    </div>
+    <div id="table-container">
+      <h3>Rankings</h3>
+      <div id="rankingTable"></div>
+    </div>
+  </div>
+</body>
+</html>
