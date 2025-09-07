@@ -51,16 +51,52 @@ class Labyrinth:
         return nr
 
     def explore_plan(self, plan: str) -> List[int]:
-        # Record label AFTER each move (length == len(plan))
+        """
+        Addendum対応のプラン実行。
+        トークン:
+          - '0'..'5' : そのドアを通って移動（観測を1つ追加）
+          - '[v]'    : 落書き（現在部屋のラベルを v に一時的に書き換え、v は 0..3）。移動せず観測もしない。
+        返り値は開始時の観測ラベルに加え、各ドア通過後の観測ラベル（落書きでは観測を増やさない）。
+        各プランのドア通過数は 6 * n_rooms を超えてはならない。
+        落書きはプラン内のみ有効（永続状態は変更しない）。
+        """
+        n_rooms = len(self.labels)
+        max_steps = 6 * n_rooms
+        steps = 0
+
+        # プラン内だけ有効な一時ラベル
+        ep_labels = self.labels[:]  # self.labels を直接変更しない
         cur = self.start
-        out: List[int] = []
-        out.append(self.labels[cur])
-        for ch in plan:
-            d = ord(ch) - 48  # fast int(ch) for '0'..'9'
-            if d < 0 or d > 5:
-                raise ValueError("plan contains non-door digit")
-            cur = self.step(cur, d)
-            out.append(self.labels[cur])
+        out: List[int] = [ep_labels[cur]]
+
+        i = 0
+        L = len(plan)
+        while i < L:
+            ch = plan[i]
+            if '0' <= ch <= '5':
+                if steps >= max_steps:
+                    raise ValueError(f"plan exceeds door-step limit (6n = {max_steps})")
+                d = ord(ch) - 48  # fast int(ch)
+                cur = self.step(cur, d)
+                steps += 1
+                out.append(ep_labels[cur])
+                i += 1
+                continue
+
+            if ch == '[':
+                j = plan.find(']', i + 1)
+                if j == -1:
+                    raise ValueError("unterminated '[' in plan")
+                inner = plan[i + 1:j]
+                if len(inner) != 1 or not ('0' <= inner <= '3'):
+                    raise ValueError("invalid graffiti; use [0], [1], [2], or [3]")
+                ep_labels[cur] = ord(inner) - 48
+                i = j + 1
+                continue
+
+            # 不正文字
+            raise ValueError("invalid plan character; allowed: digits 0-5 and graffiti [0-3]")
+
         return out
 
 
@@ -113,6 +149,89 @@ def generate_random_labyrinth(n_rooms: int, seed: Optional[int]) -> Labyrinth:
     return Labyrinth(labels=labels, start=start, to=to)
 
 
+def generate_random_duplicate_labyrinth(n_rooms: int, copies: int, seed: Optional[int]) -> Labyrinth:
+    """
+    Addendum用：重複（複製）グラフを生成する。
+
+    仕様（ご指定）:
+      1. base_n = n_rooms // copies の部屋で基礎グラフを生成
+      2. 各基礎部屋を copies 個に複製して「部屋グループ」を作る（同一ラベル）
+      3. 各部屋グループ内で、他グループへの接続先コピーをランダムに入れ替える
+
+    ラベルは基礎部屋のラベルを全コピーで共有（同一）とする。
+    開始部屋は基礎の start の 0番コピー（index = start * copies）とする。
+    """
+    if copies <= 0 or n_rooms % copies != 0:
+        raise ValueError("n_rooms must be a positive multiple of copies")
+
+    base_n = n_rooms // copies
+
+    # 基礎グラフを既存ロジックで生成（同一seedで決定的）
+    base = generate_random_labyrinth(base_n, seed)
+
+    # 乱数（接続先のコピー入れ替え用）
+    rng_perm = random.Random(seed if seed is not None else time.time_ns())
+
+    # ラベル：各基礎部屋のラベルを copies 個に複製
+    labels: List[int] = []
+    for r in range(base_n):
+        labels.extend([base.labels[r]] * copies)
+
+    start = base.start * copies  # 基礎startの0番コピー
+
+    # to テーブル（最終 n_rooms × 6）
+    to: List[List[Port]] = [[(-1, -1) for _ in range(6)] for _ in range(n_rooms)]
+
+    # 基礎ポートの無向ペアを一度だけ処理するためのカノニカル化
+    def canonical(a: Tuple[int, int], b: Tuple[int, int]) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        # (room, door) の辞書順で小さい方を先に
+        return (a, b) if a < b else (b, a)
+
+    seen_pairs = set()
+
+    for r in range(base_n):
+        for d in range(6):
+            s, d2 = base.to[r][d]
+            A, B = canonical((r, d), (s, d2))
+            if (A, B) in seen_pairs:
+                continue
+            seen_pairs.add((A, B))
+
+            # 自己ループ同士（同一ポート）: (r,d) == (s,d2)
+            if r == s and d == d2:
+                for i in range(copies):
+                    idx = r * copies + i
+                    to[idx][d] = (idx, d)  # 自分自身の同じドアへ
+                continue
+
+            # 同一部屋内の別ドア or 別部屋：コピー間対応をランダム置換
+            perm = list(range(copies))
+            rng_perm.shuffle(perm)
+
+            if r == s:
+                # 同一グループ内の別ドア (d != d2)
+                for i in range(copies):
+                    a_idx = r * copies + i
+                    b_idx = s * copies + perm[i]
+                    to[a_idx][d] = (b_idx, d2)
+                    to[b_idx][d2] = (a_idx, d)
+            else:
+                # 異なる部屋グループ間
+                for i in range(copies):
+                    a_idx = r * copies + i
+                    b_idx = s * copies + perm[i]
+                    to[a_idx][d] = (b_idx, d2)
+                    to[b_idx][d2] = (a_idx, d)
+
+    # サニティチェック
+    for r in range(n_rooms):
+        for d in range(6):
+            if to[r][d] == (-1, -1):
+                raise RuntimeError("duplicate generator error: incomplete port wiring")
+
+    return Labyrinth(labels=labels, start=start, to=to)
+
+
 def equivalent(a: Labyrinth, b: Labyrinth) -> bool:
     if len(a.labels) != len(b.labels):
         return False
@@ -149,6 +268,38 @@ CATALOG = {
     "quartus": 24,
     "quintus": 30,
     "superdumb": 1,
+
+    # --- Addendum problems (total rooms) ---
+    "aleph": 12,
+    "beth": 24,
+    "gimel": 36,
+    "daleth": 48,
+    "he": 60,
+    "vau": 18,
+    "zain": 36,
+    "hhet": 54,
+    "teth": 72,
+    "iod": 90,
+
+    "foo": 4,
+    "bar": 6,
+}
+
+# 各問題の「複製の数」（未指定は1＝従来問題）
+CATALOG_COPIES = {
+    "aleph": 2,
+    "beth": 2,
+    "gimel": 2,
+    "daleth": 2,
+    "he": 2,
+    "vau": 3,
+    "zain": 3,
+    "hhet": 3,
+    "teth": 3,
+    "iod": 3,
+
+    "foo": 2,
+    "bar": 3,
 }
 
 
@@ -377,10 +528,10 @@ class JudgeHandler(BaseHTTPRequestHandler):
             return error(self, 400, "seed must be int if provided")
 
         with TEAMS_LOCK:
-            # Ignore provided id; use a shared default state so users don't worry about ids.
             ts = TEAMS.setdefault("_default", TeamState())
             n = CATALOG[pname]
-            # Choose seed: explicit seed > explicit random flag > server default
+
+            # 乱数シードの決定（既存ロジックのまま）
             if seed is not None:
                 used_seed = seed
                 mode = "fixed(seed)"
@@ -399,7 +550,13 @@ class JudgeHandler(BaseHTTPRequestHandler):
                     used_seed = random.SystemRandom().randrange(1 << 63)
                     mode = "random(default)"
 
-            ts.active = generate_random_labyrinth(n, used_seed)
+            # ← ここを分岐
+            copies = CATALOG_COPIES.get(pname, 1)
+            if copies == 1:
+                ts.active = generate_random_labyrinth(n, used_seed)
+            else:
+                ts.active = generate_random_duplicate_labyrinth(n, copies, used_seed)
+
             ts.problem_name = pname
             ts.query_count = 0
             ts.seed = used_seed
@@ -440,15 +597,14 @@ class JudgeHandler(BaseHTTPRequestHandler):
             results: List[List[int]] = []
             try:
                 for p in plans:
-                    if not isinstance(p, str) or any((c < '0' or c > '5') for c in p):
-                        return error(self, 400, "plans must be strings of digits 0..5")
+                    if not isinstance(p, str):
+                        return error(self, 400, "each plan must be a string")
+                    # Addendum対応のパーサと 6n 制限は explore_plan 側に委譲
                     res = ts.active.explore_plan(p)
                     results.append(res)
                     vlog(f"explore '{p}' -> {res}")
-            finally:
-                # Update queryCount even on malformed plans? C++ increments only when explore succeeds.
-                # We mirror C++: increment after processing the list once.
-                pass
+            except ValueError as ve:
+                return error(self, 400, str(ve))
 
             before = ts.query_count
             ts.query_count += len(plans) + 1
@@ -588,7 +744,7 @@ if __name__ == "__main__":
         # 1) select with deterministic seed (id ignored server-side)
         _, sel = post_json("/select", {"id": "ignored", "problemName": "probatio", "seed": 42})
         # 2) explore a few plans
-        _, ex1 = post_json("/explore", {"id": "ignored", "plans": ["0", "123", "505"]})
+        _, ex1 = post_json("/explore", {"id": "ignored", "plans": ["0", "123", "505", "2[3]12[0]"]})
         # 3) submit a deliberately invalid/partial guess
         bad_guess = {
             "rooms": [0, 1, 2],
@@ -602,7 +758,7 @@ if __name__ == "__main__":
         _, g1 = post_json("/guess", {"id": "ignored", "map": bad_guess})
         # 4) ensure reset works
         _, sel2 = post_json("/select", {"id": "ignored", "problemName": "primus", "seed": 7})
-        _, ex2 = post_json("/explore", {"id": "ignored", "plans": ["012345"]})
+        _, ex2 = post_json("/explore", {"id": "ignored", "plans": ["012345", "[1]0[2]1[3]2"]})
 
         # 5) Solve the superdumb problem automatically
         print("\nSolving 'superdumb' problem (1 room) automatically...\n")
