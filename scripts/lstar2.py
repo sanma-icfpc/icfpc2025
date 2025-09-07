@@ -502,11 +502,9 @@ def build_guess(hyp: Hypothesis) -> Dict:
 
 # ==== Example runner ==== #
 
-def main():
+def main(problem_name: str, n_rooms: int):
     # ---- Configuration ----
-    PROBLEM_NAME = "aleph"
-    N_ROOMS = 12
-    MAX_DOOR_STEPS_PER_PLAN = 6 * N_ROOMS                 # per addendum
+    MAX_DOOR_STEPS_PER_PLAN = 6 * n_rooms                 # per addendum
     team_id = os.getenv("ICFP_ID")                        # set your secret id
 
     client = AedificiumClient(team_id=team_id)
@@ -515,7 +513,7 @@ def main():
         client.register(name="Your Team", pl="Python", email="you@example.com")
         print("Registered; set ICFP_ID to:", client.id)
 
-    chosen = client.select_problem(PROBLEM_NAME)
+    chosen = client.select_problem(problem_name)
     print("Selected:", chosen)
 
     oracle = ExploreOracle(client, max_steps_per_plan=MAX_DOOR_STEPS_PER_PLAN)
@@ -532,16 +530,30 @@ def main():
 
     hyp = learner.learn(marking_colors=colors, W_suffixes=W_suffixes, max_iters=300)
 
-    guess_map = learner.reconstruct(hyp, N_ROOMS)
+    guess_map = learner.reconstruct(hyp, n_rooms)
 
     print(json.dumps(guess_map, indent=2))
     ok = client.guess(guess_map)
     print("Guess correct?", ok)
 
+
 if __name__ == "__main__":
-    try:
-        main()
-    except requests.HTTPError as e:
-        print("HTTP error:", e.response.text if hasattr(e, "response") else str(e))
-    # except Exception as ex:
-    #     print("Error:", ex)
+    problems = [
+        ("aleph", 12),
+        ("beth", 24),
+        ("gimel", 36),
+        ("daleth", 48),
+        ("he", 60),
+        ("vau", 18),
+        ("zain", 36),
+        ("hhet", 54),
+        ("teth", 72),
+        ("iod", 90),
+    ]
+    for problem_name, n_rooms in problems:
+        try:
+            main(problem_name, n_rooms)
+        except requests.HTTPError as e:
+            print("HTTP error:", e.response.text if hasattr(e, "response") else str(e))
+        except Exception as ex:
+            print("Error:", ex)
