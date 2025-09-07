@@ -237,16 +237,46 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
     @app.route("/minotaur/download_db")
     @guard.require()
     def ui_download_db():
+        """Deliver a consistent SQLite snapshot, even while the server is running.
+
+        Uses SQLite backup into a temporary file so WAL contents are included
+        and in-memory databases can be dumped as well. Works on Linux/Windows.
+        """
+        import sqlite3, tempfile, io
         try:
-            dbp = ctx.s.db_path
-            # In-memory DB URIs cannot be downloaded
-            if dbp.startswith("file:") and ("mode=memory" in dbp):
-                return jsonify({"error": "in_memory_db"}), 400
-            if not os.path.isfile(dbp):
-                return jsonify({"error": "not_found"}), 404
-            return send_file(dbp, as_attachment=True, download_name="coordinator.sqlite", mimetype="application/x-sqlite3")
-        except Exception:
-            return jsonify({"error": "download_failed"}), 500
+            src_path = ctx.s.db_path
+            # Connect to source (use URI for file: or memory URIs)
+            use_uri = src_path.startswith("file:") or ("mode=memory" in src_path) or src_path.startswith("sqlite:")
+            src = sqlite3.connect(src_path, uri=use_uri, check_same_thread=False)
+            # Create temp file and write a consistent backup
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite") as tf:
+                tmp_path = tf.name
+            dst = sqlite3.connect(tmp_path)
+            try:
+                # Fast, consistent copy (includes WAL)
+                src.backup(dst)
+            finally:
+                try:
+                    dst.close()
+                except Exception:
+                    pass
+                try:
+                    src.close()
+                except Exception:
+                    pass
+            # Stream file to client and remove temp file immediately after reading
+            data: bytes
+            with open(tmp_path, "rb") as f:
+                data = f.read()
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            bio = io.BytesIO(data)
+            bio.seek(0)
+            return send_file(bio, as_attachment=True, download_name="coordinator.sqlite", mimetype="application/x-sqlite3")
+        except Exception as e:
+            return jsonify({"error": "download_failed", "detail": str(e)}), 500
 
     @app.route("/minotaur/db_info")
     @guard.require()
@@ -606,7 +636,8 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                     # initialize last progression time as now if unseen
                     if prev is None:
                         _THREAD_SAMPLES[tid] = {"cpu": cpu, "last": now}
-                        t["statusKind"] = "unknown"
+                        # Treat first observation as waiting; next sample will flip to running if CPU progressed
+                        t["statusKind"] = "waiting"
                         t["idleForSec"] = 0.0
                     else:
                         progressed = (cpu > prev.get("cpu", 0.0) + 1e-6)
@@ -619,7 +650,8 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                             t["statusKind"] = "waiting"
                             t["idleForSec"] = max(0.0, now - float(prev.get("last", now)))
                 else:
-                    t["statusKind"] = t.get("statusKind") or "unknown"
+                    # No OS thread id available; default to waiting
+                    t["statusKind"] = t.get("statusKind") or "waiting"
                     t["idleForSec"] = t.get("idleForSec") or 0.0
         except Exception:
             pass

@@ -318,6 +318,11 @@
       updateAutoToggleUI();
       startSSE();
       setInterval(updateRelativeTimes, 1000);
+      // Light periodic refresh for Admin thread view so first-sample statuses settle without SSE
+      setInterval(function() {
+        if (!autoUpdateEnabled) return;
+        try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
+      }, 2000);
     });
 
     function bindRecentFilterEvents() {
