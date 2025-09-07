@@ -86,8 +86,9 @@ template<typename... Ts> std::string format(const std::string& f, Ts... t) { siz
 /** dump **/
 #define ENABLE_DUMP
 #ifdef ENABLE_DUMP
-std::ofstream ofs("log.txt");
-#define DUMPOUT ofs
+//std::ofstream ofs("log.txt");
+//#define DUMPOUT ofs
+#define DUMPOUT std::cerr
 #define debug(...) do{DUMPOUT<<"  ";DUMPOUT<<#__VA_ARGS__<<" :[DUMP - "<<__LINE__<<":"<<__FUNCTION__<<"]"<<std::endl;DUMPOUT<<"    ";dump_func(__VA_ARGS__);}while(0);
 void dump_func() { DUMPOUT << std::endl; }
 template <class Head, class... Tail> void dump_func(Head&& head, Tail&&... tail) { DUMPOUT << head; if (sizeof...(Tail) == 0) { DUMPOUT << " "; } else { DUMPOUT << ", "; } dump_func(std::move(tail)...); }
@@ -494,10 +495,28 @@ Labyrinth generate_random_labyrinth(int n_rooms, std::optional<uint64_t> seed = 
 namespace NLocalSearch {
 
     struct Delta {
+
         enum struct Type { LABEL, TWO_SWITCH };
+
         Type type;
         bool ok;
-        int a, b;
+
+        // for LABEL
+        int a, b; // TODO: rename
+
+        // for TWO_SWITCH
+        std::array<int, 4> idx;
+        std::array<int, 4> oldv;
+
+        inline void set(int k, int i, int old) {
+            idx[k] = i;
+            oldv[k] = old;
+        }
+
+        inline void undo_vec(std::vector<int>& to) const {
+            for (int k = 0; k < 4; k++) to[idx[k]] = oldv[k];
+        }
+
     };
 
     struct State {
@@ -539,39 +558,63 @@ namespace NLocalSearch {
             return modify_label(idx, to_label);
         }
 
-        Delta modify_two_switch(int p, int q) {
+        Delta modify_two_switch(int p, int q, bool allow_self_loop) {
             // p, q: compressed port
-            Delta d; d.type = Delta::Type::TWO_SWITCH;
-            assert(p < (int)to.size() && q < (int)to.size());
-            assert(p != q); // 現行実装だと自己ループを含む操作の Undo で assertion error が起きる
+            Delta d; d.type = Delta::Type::TWO_SWITCH; d.ok = false;
+            const int N = (int)to.size(); // nrooms*6
+            assert(p < N && q < N);
+            assert(p != q);
+
             const int P = to[p], Q = to[q];
-            //if (P == q || Q == p) {
-            if (P == q || Q == p || p == P || q == Q || P == Q) {
-                d.ok = false;
-                return d;
+
+            if (P == q || Q == p) return d; // // すでに p<->q なら無意味
+            if (!allow_self_loop && (p == P || q == Q || P == Q)) return d;
+
+            // 差分保存
+            d.set(0, p, to[p]);
+            d.set(1, q, to[q]);
+            d.set(2, P, to[P]);
+            d.set(3, Q, to[Q]);
+
+            if (P != p && Q != q) {
+                // Case A: 両方 非自己ループ (p-P, q-Q) -> (p-q, P-Q)
+                to[p] = q; to[q] = p;
+                to[P] = Q; to[Q] = P;
             }
-            to[p] = q; to[q] = p; to[P] = Q; to[Q] = P;
-            // modify_two_switch(s, p, P) で元に戻る
+            else if (P == p && Q == q) {
+                // Case B: 両方 自己ループ (p-p, q-q) -> (p-q, p-q)
+                to[p] = q; to[q] = p;
+                // P==p, Q==q なので他は変更不要（oldv は登録済みだが値は同じでもOK）
+            }
+            else if (P == p && Q != q) {
+                // Case C: p は自己, q は非自己 (p-p, q-Q) -> (p-q, Q-Q)
+                to[p] = q; to[q] = p;
+                to[Q] = Q;            // Q を自己化
+            }
+            else { // (P != p && Q == q)
+                // Case D: p は非自己, q は自己 (p-P, q-q) -> (q-p, P-P)
+                to[p] = q; to[q] = p;
+                to[P] = P;            // P を自己化
+            }
+
             d.ok = true;
-            d.a = p;
-            d.b = P;
             return d;
         }
 
-        Delta modify_random_two_switch(Xorshift& r) {
+        Delta modify_random_two_switch(Xorshift& r, bool allow_self_loop) {
             const int n = (int)to.size(); // nrooms * 6
             int p = r.next_u32(n), q;
             do {
                 q = r.next_u32(n);
             } while (p == q);
-            return modify_two_switch(p, q);
+            return modify_two_switch(p, q, allow_self_loop);
         }
 
-        Delta modify_random(Xorshift& r) {
+        Delta modify_random(Xorshift& r, bool allow_self_loop) {
             if (r.next_u32(2)) {
                 return modify_random_label(r);
             }
-            return modify_random_two_switch(r);
+            return modify_random_two_switch(r, allow_self_loop);
         }
 
         void undo(const Delta& d) {
@@ -579,7 +622,7 @@ namespace NLocalSearch {
                 modify_label(d.a, d.b);
             }
             else if (d.type == Delta::Type::TWO_SWITCH) {
-                modify_two_switch(d.a, d.b);
+                d.undo_vec(to);
             }
             else {
                 assert(false);
@@ -606,9 +649,9 @@ namespace NLocalSearch {
 
     Labyrinth to_labyrinth(const State& s) {
         Labyrinth L;
-        const int n = L.labels.size();
         L.labels = s.labels;
-        L.to.resize(L.labels.size());
+        const int n = L.labels.size();
+        L.to.resize(n);
         for (int r = 0; r < (int)L.labels.size(); r++) {
             for (int d = 0; d < 6; d++) {
                 L.to[r][d] = Port::from_int(s.to[r * 6 + d]);
@@ -622,7 +665,9 @@ namespace NLocalSearch {
         for (int r = 0; r < n; ++r) {
             for (int d = 0; d < 6; ++d) {
                 auto [r2, d2] = L.to[r][d];
-                assert(r == L.to[r2][d2].room && d == L.to[r2][d2].door);
+                assert(0 <= r2 && r2 < n && 0 <= d2 && d2 < 6);
+                auto [r3, d3] = L.to[r2][d2];
+                assert(r3 == r && d3 == d);  // 無向対称性
             }
         }
                 
@@ -638,6 +683,7 @@ namespace NLocalSearch {
         constexpr int innerloop_iter = 1000000;
         constexpr double start_temp = 1.0;
         constexpr double end_temp = 0.01;
+        const bool allow_self_loop = true;
 
         Xorshift rnd;
 
@@ -648,7 +694,7 @@ namespace NLocalSearch {
         for (trial = 0; trial < multistart_iter; trial++) {
             if (!global_min_cost) break;
 
-            ofs << format("--- trial %3d begin ---\n", trial);
+            DUMPOUT << format("--- trial %3d begin ---", trial) << std::endl;
 
             auto L = generate_random_labyrinth(num_rooms, rnd.next_u64());
             L.labels[0] = target_labels[0]; // 出発地点を 0 とし、そのラベルは固定
@@ -659,11 +705,11 @@ namespace NLocalSearch {
             State best_state(state);
             int min_cost = cost;
 
-            ofs << format("initial cost: %d\n", cost);
+            DUMPOUT << format("initial cost: %d", cost) << std::endl;
 
             int step;
             for (step = 0; step < innerloop_iter; step++) {
-                auto delta = state.modify_random(rnd);
+                auto delta = state.modify_random(rnd, allow_self_loop);
                 if (!delta.ok) continue;
                 int new_cost = state.calc_diff(plan, target_labels);
                 int diff = new_cost - cost;
@@ -673,7 +719,7 @@ namespace NLocalSearch {
                     cost = new_cost;
                     if (chmin(min_cost, cost)) {
                         best_state = state;
-                        ofs << format("step=%10d, min_cost=%4d, cost=%4d\n", step, min_cost, cost);
+                        DUMPOUT << format("step=%10d, min_cost=%4d, cost=%4d", step, min_cost, cost) << std::endl;
                         if (!min_cost) break;
                     }
                 }
@@ -681,18 +727,18 @@ namespace NLocalSearch {
                     state.undo(delta);
                 }
             }
-            ofs << format("step=%10d, min_cost=%4d, cost=%4d\n", step, min_cost, cost);
+            DUMPOUT << format("step=%10d, min_cost=%4d, cost=%4d", step, min_cost, cost) << std::endl;
 
             if (min_cost < global_min_cost) {
-                ofs << format("global min cost updated: %4d -> %4d\n", global_min_cost, min_cost);
+                DUMPOUT << format("global min cost updated: %4d -> %4d", global_min_cost, min_cost) << std::endl;
                 global_min_cost = min_cost;
                 global_best_state = best_state;
             }
 
-            ofs << format("--- trial %3d end   ---\n", trial);
+            DUMPOUT << format("--- trial %3d end   ---", trial) << std::endl;
         }
 
-        ofs << format("num trial: %3d, global min cost: %4d\n", trial, global_min_cost);
+        DUMPOUT << format("num trial: %3d, global min cost: %4d", trial, global_min_cost) << std::endl;
 
         GuessMap gm(to_labyrinth(global_best_state));
         return gm;
