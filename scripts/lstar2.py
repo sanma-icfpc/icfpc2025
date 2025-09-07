@@ -24,7 +24,7 @@ import traceback
 # BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
 BASE_URL = "http://tk2-401-41624.vs.sakura.ne.jp:19384/"
 DOORS = "012345"  # door labels as characters
-AGENT_NAME = "nodchip:lstar2"
+AGENT_NAME = os.getenv("AGENT_NAME", "nodchip:lstar2")
 AGENT_ID = str(os.getpid())
 TIMEOUT_SEC = 6000
 PROGRESS_DURATION_SEC = float(os.getenv("PROGRESS_DURATION_SEC", -1.0))
