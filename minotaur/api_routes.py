@@ -27,7 +27,22 @@ def _log_ch_req(ctx: AppCtx, ch_id: int, api: str, req_key: str, phase: str, sta
         pass
 
 
-def _current_running_session(ctx: AppCtx) -> Optional[str]:
+def _current_running_session(ctx: AppCtx, agent_name: Optional[str] = None) -> Optional[str]:
+    """Return the session_id for the currently running challenge.
+
+    If an agent_name is provided (from X-Agent-Name), restrict the lookup to
+    that agent to avoid cross-agent/session mixups after timeouts or preemption.
+    Falls back to global running session when name is not provided for
+    backwards compatibility.
+    """
+    if agent_name:
+        row = ctx.conn.execute(
+            "SELECT session_id FROM challenges WHERE status='running' AND agent_name=? LIMIT 1",
+            (agent_name,),
+        ).fetchone()
+        if row and row["session_id"]:
+            return row["session_id"]
+        return None
     row = ctx.conn.execute("SELECT session_id FROM challenges WHERE status='running' LIMIT 1").fetchone()
     return row["session_id"] if row and row["session_id"] else None
 
@@ -43,10 +58,13 @@ def register_api_routes(app, ctx: AppCtx) -> None:
     def explore_route():
         body = request.get_json(silent=True) or {}
         agent_id = request.headers.get("X-Agent-ID") or None
+        agent_name = request.headers.get("X-Agent-Name") or None
         git_sha = request.headers.get("X-Agent-Git") or None
-        sid = _current_running_session(ctx)
+        # Bind explore to the caller's running session to avoid accidental
+        # forwarding to a different agent's fresh session after timeout.
+        sid = _current_running_session(ctx, agent_name)
         if not sid:
-            return jsonify({"error": "no active session"}), 409
+            return jsonify({"error": "no active session for agent", "agent": agent_name}), 409
         state = {
             "query_count": (
                 ctx.conn.execute("SELECT upstream_query_count FROM challenges WHERE status='running'").fetchone()
@@ -131,10 +149,13 @@ def register_api_routes(app, ctx: AppCtx) -> None:
     def guess_route():
         body = request.get_json(silent=True) or {}
         agent_id = request.headers.get("X-Agent-ID") or None
+        agent_name = request.headers.get("X-Agent-Name") or None
         git_sha = request.headers.get("X-Agent-Git") or None
-        sid = _current_running_session(ctx)
+        # Bind guess to the caller's running session; if their lease expired
+        # and another agent was granted, avoid submitting to the wrong session.
+        sid = _current_running_session(ctx, agent_name)
         if not sid:
-            return jsonify({"error": "no active session"}), 409
+            return jsonify({"error": "no active session for agent", "agent": agent_name}), 409
         rk = str(uuid.uuid4())
         cur = ctx.conn.execute("SELECT id FROM challenges WHERE status='running' LIMIT 1").fetchone()
         ch_id = int(cur["id"]) if cur else None

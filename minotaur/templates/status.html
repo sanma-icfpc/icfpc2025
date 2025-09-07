@@ -32,15 +32,15 @@
             <div class="col-span-2 text-right">コード</div>
           </div>
           {% for f in running_flows %}
-            <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
+            <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden'); (this.querySelectorAll ? this.querySelectorAll('.summary-inline').forEach(el=>el.classList.toggle('hidden')) : null)">
               <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
               <div class="col-span-2">
                 {% if f.api == 'event' %}
                   <div class="text-gray-500">(internal)</div>
-                  {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                  {% if f.summary %}<div class="text-gray-400 summary-inline hidden">{{ f.summary }}</div>{% endif %}
                 {% else %}
                   <div>/{{ f.api }}</div>
-                  {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                  {% if f.summary %}<div class="text-gray-400 summary-inline hidden">{{ f.summary }}</div>{% endif %}
                 {% endif %}
               </div>
               <div class="col-span-4">
@@ -189,19 +189,22 @@
                 </div>
               </div>
               <div class="mt-2">
-                <h4 class="font-semibold text-xs mb-1">Request</h4>
-                <div class="text-xs bg-gray-50 border rounded p-2">
+                <div class="flex items-center gap-2 select-none cursor-pointer" data-recent-toggle="1" role="button" tabindex="0">
+                  <h4 class="font-semibold text-xs mb-1">Request</h4>
+                  <span class="text-gray-500 text-xs" data-caret>▸</span>
+                </div>
+                <div class="text-xs bg-gray-50 border rounded p-2 hidden" data-recent-requests>
                   {% set flows = recent_flows.get(t.id) %}
                   {% for f in flows %}
-                    <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
+                    <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden'); (this.querySelectorAll ? this.querySelectorAll('.summary-inline').forEach(el=>el.classList.toggle('hidden')) : null)">
                       <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
                       <div class="col-span-2">
                         {% if f.api == 'event' %}
                           <div class="text-gray-500">(internal)</div>
-                          {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                          {% if f.summary %}<div class="text-gray-400 summary-inline hidden">{{ f.summary }}</div>{% endif %}
                         {% else %}
                           <div>/{{ f.api }}</div>
-                          {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                          {% if f.summary %}<div class="text-gray-400 summary-inline hidden">{{ f.summary }}</div>{% endif %}
                         {% endif %}
                     </div>
                       <div class="col-span-4">

@@ -212,7 +212,9 @@
         });
       } catch (_) {}
     }
-    function loadStatus() {
+    function loadStatus(opts) {
+      opts = opts || {};
+      const skipRecent = !!opts.skipRecent; // when true, do not re-render Recent pane
       if (statusInFlight) return;
       const rPane = document.getElementById('running-pane');
       const qPane = document.getElementById('queued-pane');
@@ -237,18 +239,24 @@
           const secRec = root.querySelector('#section-recent');
           if (secRun) rPane.innerHTML = secRun.outerHTML; else rPane.textContent = '—';
           if (secQue) qPane.innerHTML = secQue.outerHTML; else qPane.textContent = '—';
-          if (secRec) rcPane.innerHTML = secRec.outerHTML; else rcPane.textContent = '—';
-          updateIdenticons(rPane); updateIdenticons(qPane); updateIdenticons(rcPane);
-          try {
-            const pager = rcPane.querySelector('#recent-pager');
-            if (pager) {
-              const pg = parseInt(pager.getAttribute('data-page') || `${recentPage}`, 10) || recentPage;
-              recentPage = pg; // sync with server clamp
-              setURLParam('recent_page', recentPage);
-              bindRecentPagerEvents();
-            }
-          } catch (_) {}
-          try { bindRecentFilterEvents(); } catch (_) {}
+          let updatedRecent = false;
+          if (!skipRecent) {
+            if (secRec) rcPane.innerHTML = secRec.outerHTML; else rcPane.textContent = '—';
+            updatedRecent = true;
+          }
+          updateIdenticons(rPane); updateIdenticons(qPane); if (!skipRecent) updateIdenticons(rcPane);
+          if (updatedRecent) {
+            try {
+              const pager = rcPane.querySelector('#recent-pager');
+              if (pager) {
+                const pg = parseInt(pager.getAttribute('data-page') || `${recentPage}`, 10) || recentPage;
+                recentPage = pg; // sync with server clamp
+                setURLParam('recent_page', recentPage);
+                bindRecentPagerEvents();
+              }
+            } catch (_) {}
+            try { bindRecentFilterEvents(); } catch (_) {}
+          }
         })
         .catch(() => {})
         .finally(() => { statusInFlight = false; [rPane,qPane,rcPane].forEach((el,i)=>{ try{ el.scrollTop = prevScrolls[i]; }catch(_){}}); try { window.scrollTo(0, prevWinY); } catch(_){}; restoreUIState(); updateRelativeTimes(); });
@@ -269,7 +277,16 @@
         es.onopen = function() { if (autoUpdateEnabled) setSSEStatus(true); };
         es.addEventListener('change', function(_) {
           if (!autoUpdateEnabled) return;
-          loadStatus(); updateAgentCount(); refreshPriorityStatuses();
+          // If "Recent" tab is active, skip status fetch entirely (no /minotaur/status)
+          try {
+            const recentTab = document.getElementById('tab-recent');
+            const recentVisible = !!(recentTab && !recentTab.classList.contains('hidden'));
+            if (!recentVisible) {
+              // Do not auto-refresh Recent pane to avoid losing user context
+              loadStatus({ skipRecent: true });
+            }
+          } catch (_) {}
+          updateAgentCount(); refreshPriorityStatuses();
           try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
           try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
           try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
@@ -631,6 +648,75 @@
         el.className = 'badge badge-offline ml-2';
       }
     }
+
+    // Toggle Recent card's Request panel (collapsed by default)
+    function toggleRecentRequests(headerEl) {
+      try {
+        console.log(1);
+        if (!headerEl) return false;
+        console.log(2);
+        // Container sits as a sibling with data-recent-requests
+        let scope = headerEl.parentElement || null;
+        console.log(3);
+        let container = null;
+        console.log(4);
+        if (scope) container = scope.querySelector('[data-recent-requests]');
+        console.log(5);
+        if (!container) container = headerEl.nextElementSibling;
+        console.log(6);
+        if (!container) return false;
+        console.log(7);
+        container.classList.toggle('hidden');
+        console.log(8);
+        // Update visual caret if present
+        const caret = headerEl.querySelector('[data-caret]');
+        console.log(9);
+        if (caret) caret.textContent = container.classList.contains('hidden') ? '▸' : '▾';
+        console.log(10);
+        return false;
+      } catch (_) { return false; }
+    }
+
+    // Delegate click to Recent toggle headers to avoid inline-handler quirks
+    (function bindRecentToggleDelegation(){
+      const once = function() {
+        try {
+          const pane = document.getElementById('recent-pane');
+          if (!pane) return;
+          if (pane._recentDelegationBound) return; // guard
+          pane._recentDelegationBound = true;
+          pane.addEventListener('click', function(ev) {
+            try {
+              const target = ev.target;
+              if (!target || !target.closest) return;
+              const header = target.closest('[data-recent-toggle]');
+              if (header && pane.contains(header)) {
+                ev.preventDefault();
+                toggleRecentRequests(header);
+              }
+            } catch (_) {}
+          });
+          // Keyboard support (Enter/Space)
+          pane.addEventListener('keydown', function(ev) {
+            try {
+              if (ev.key !== 'Enter' && ev.key !== ' ') return;
+              const target = ev.target;
+              if (!target || !target.closest) return;
+              const header = target.closest('[data-recent-toggle]');
+              if (header && pane.contains(header)) {
+                ev.preventDefault();
+                toggleRecentRequests(header);
+              }
+            } catch (_) {}
+          });
+        } catch (_) {}
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', once, { once: true });
+      } else {
+        once();
+      }
+    })();
   </script>
 </body>
 </html>
