@@ -560,10 +560,11 @@ if __name__ == "__main__":
         ("teth", 72),
         ("iod", 90),
     ]
-    for problem_name, n_rooms in problems:
-        try:
-            main(problem_name, n_rooms)
-        except requests.HTTPError as e:
-            print("HTTP error:", e.response.text if hasattr(e, "response") else str(e))
-        except Exception as ex:
-            print("Error:", ex)
+    while True:
+        for problem_name, n_rooms in problems:
+            try:
+                main(problem_name, n_rooms)
+            except requests.HTTPError as e:
+                print("HTTP error:", e.response.text if hasattr(e, "response") else str(e))
+            except Exception as ex:
+                print("Error:", ex)
