@@ -673,12 +673,12 @@ if __name__ == "__main__":
         # ("beth", 24),
         # ("gimel", 36),
         # ("daleth", 48),
-        ("he", 60),
-        ("vau", 18),
+        # ("he", 60),
+        # ("vau", 18),
         ("zain", 36),
         ("hhet", 54),
-        ("teth", 72),
-        ("iod", 90),
+        # ("teth", 72),
+        # ("iod", 90),
     ]
     while True:
         for problem_name, n_rooms in problems:
