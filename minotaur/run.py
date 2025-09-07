@@ -2,8 +2,9 @@
 WSGI entry for running from within the `minotaur/` directory.
 
 Usage (from minotaur/ as CWD):
-  - uv:  uv run waitress-serve --listen=*:19384 run:app
-  - pip: python -m waitress --listen=*:19384 run:app
+  - Preferred: uv run python -m minotaur.app
+  - waitress CLI (keep threads reasonable, prefer poll):
+      uv run waitress-serve --listen=*:19384 --threads=128 --asyncore-use-poll run:app
 
 This module ensures the repository root is on sys.path so that
 `minotaur.app` can be imported as a package.
@@ -20,4 +21,3 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from minotaur.app import app  # noqa: E402  (import after sys.path tweak)
-

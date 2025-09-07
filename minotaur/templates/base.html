@@ -273,6 +273,7 @@
           try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
           try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
           try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
+          try { if (typeof window.refreshMemInfoIfVisible === 'function') window.refreshMemInfoIfVisible(); } catch (_) {}
         });
         es.onerror = function(_) { if (autoUpdateEnabled) setSSEStatus(false); };
       } catch (_) {}
@@ -319,6 +320,7 @@
         try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
         try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
         try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
+        try { if (typeof window.refreshMemInfoIfVisible === 'function') window.refreshMemInfoIfVisible(); } catch (_) {}
       } else {
         stopSSE();
         // reflect paused state in badge
@@ -339,6 +341,7 @@
       setInterval(function() {
         if (!autoUpdateEnabled) return;
         try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
+        try { if (typeof window.refreshMemInfoIfVisible === 'function') window.refreshMemInfoIfVisible(); } catch (_) {}
       }, 2000);
     });
 

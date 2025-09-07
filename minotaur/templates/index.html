@@ -59,6 +59,15 @@
         </div>
       </div>
       <div>
+        <h2 class="font-semibold mb-2">Memory</h2>
+        <div class="text-sm text-gray-700">
+          <span id="mem-summary">—</span>
+        </div>
+        <div class="mt-1">
+          <pre id="mem-json" class="p-2 bg-gray-50 border rounded text-xs overflow-auto max-h-72">—</pre>
+        </div>
+      </div>
+      <div>
         <h2 class="font-semibold mb-2">Server Threads</h2>
         <div class="text-sm text-gray-700 flex items-center gap-3">
           <span>Threads:</span>
@@ -216,6 +225,37 @@
     }
   }
 
+  function loadMemInfo() {
+    const sum = document.getElementById('mem-summary');
+    const pre = document.getElementById('mem-json');
+    if (!sum || !pre) return;
+    fetch('/minotaur/mem_info', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          const rss = (typeof j.rssMB === 'number') ? `${j.rssMB.toFixed(1)} MB` : '—';
+          const vms = (typeof j.vmsMB === 'number') ? `${j.vmsMB.toFixed(1)} MB` : '—';
+          const th = (typeof j.threads === 'number') ? j.threads : (j.py_threads || '—');
+          const gc = Array.isArray(j.py_gc) ? j.py_gc.join('/') : (j.py_gc || '');
+          let parts = [];
+          parts.push(`RSS: ${rss}`);
+          if (typeof j.vmsMB === 'number') parts.push(`VMS: ${vms}`);
+          if (th !== undefined) parts.push(`Threads: ${th}`);
+          if (gc) parts.push(`GC: ${gc}`);
+          sum.textContent = parts.join('   ');
+          pre.textContent = JSON.stringify(j, null, 2);
+        } catch (_) { sum.textContent = '—'; pre.textContent = '—'; }
+      })
+      .catch(() => { sum.textContent = '—'; pre.textContent = '—'; });
+  }
+
+  function refreshMemInfoIfVisible() {
+    const el = document.getElementById('tab-admin');
+    if (el && !el.classList.contains('hidden')) {
+      loadMemInfo();
+    }
+  }
+
   function loadThreadsInfo() {
     const cnt = document.getElementById('threads-count');
     const stat = document.getElementById('threads-states');
@@ -281,6 +321,7 @@
     // Preload DB info if Admin is the initial tab
     refreshDBInfoIfVisible();
     refreshThreadsIfVisible();
+    refreshMemInfoIfVisible();
   });
 </script>
 {% endblock %}

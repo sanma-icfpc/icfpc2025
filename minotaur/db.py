@@ -112,6 +112,26 @@ def get_conn(path: str) -> sqlite3.Connection:
             # WAL is not supported for in-memory DBs; ignore
             pass
         conn.execute("PRAGMA synchronous=NORMAL;")
+        # Cap per-connection cache to reduce RSS on small machines.
+        # Negative value = KiB units. Default to 2048 KiB (2 MiB) per connection; override via env.
+        try:
+            _cache_kb_env = os.getenv("MINOTAUR_SQLITE_CACHE_KB") or os.getenv("SQLITE_CACHE_KB")
+            cache_kb = int(_cache_kb_env) if _cache_kb_env else 2048
+            cache_kb = max(256, min(65536, cache_kb))  # clamp between 256 KiB and 64 MiB
+            conn.execute(f"PRAGMA cache_size={-abs(cache_kb)};")
+        except Exception:
+            pass
+        # Allow page cache to spill to disk if needed (usually ON by default, but be explicit)
+        try:
+            conn.execute("PRAGMA cache_spill=1;")
+        except Exception:
+            pass
+        # Optional: force temp storage to file to avoid large in-memory temps; opt-in via env
+        try:
+            if (os.getenv("MINOTAUR_SQLITE_TEMP_TO_FILE") or "").strip().lower() in {"1","true","yes","on"}:
+                conn.execute("PRAGMA temp_store=FILE;")
+        except Exception:
+            pass
     _LOCAL.conn = conn
     return conn
 

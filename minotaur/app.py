@@ -158,6 +158,22 @@ def main() -> None:
     try:
         from waitress import serve as _serve
         _log(f"[boot] starting waitress on 0.0.0.0:{s.port} threads={s.waitress_threads}")
+        # Prefer poll() over select() to avoid "filedescriptor out of range in select()"
+        # when many FDs are open (e.g., per-thread SQLite connections).
+        try:
+            _log(f"[boot] try waitress that uses poll()")
+            _serve(
+                app,
+                host="0.0.0.0",
+                port=int(s.port),
+                threads=int(s.waitress_threads),
+                asyncore_use_poll=True,  # available on modern waitress; ignored via TypeError fallback otherwise
+            )
+            return
+        except TypeError:
+            # Older waitress without asyncore_use_poll
+            pass
+        _log(f"[boot] fall waitress that uses select()")
         _serve(app, host="0.0.0.0", port=int(s.port), threads=int(s.waitress_threads))
     except Exception as e:
         _log(f"[boot] waitress not available ({e}); falling back to Flask dev server")

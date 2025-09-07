@@ -436,6 +436,75 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             return jsonify({"error": "fd_info_failed"}), 500
 
+    @app.route("/minotaur/mem_info")
+    @guard.require()
+    def ui_mem_info():
+        """Basic process memory stats for debugging RSS growth.
+
+        - On Linux, parse /proc/self/status for VmRSS/VmSize.
+        - Fallback to psutil if available; otherwise return minimal info.
+        """
+        import json as _json  # noqa: F401
+        plat = (_platform.system() or "").lower()
+        pid = os.getpid()
+        info: Dict[str, Any] = {"pid": pid, "platform": _platform.system()}
+        # Python GC counters
+        try:
+            import gc as _gc
+            info["py_gc"] = tuple(_gc.get_count())
+        except Exception:
+            pass
+        # Python thread count
+        try:
+            import threading as _th
+            info["threads"] = len(_th.enumerate())
+        except Exception:
+            pass
+        # Env hints
+        try:
+            info["WAITRESS_THREADS"] = int(os.getenv("WAITRESS_THREADS", "0") or 0)
+        except Exception:
+            pass
+        # Linux detailed
+        if plat == "linux":
+            try:
+                vmrss = None
+                vmsize = None
+                with open(f"/proc/{pid}/status", "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if line.startswith("VmRSS:"):
+                            # e.g., "VmRSS:\t  12345 kB"
+                            try:
+                                vmrss = int(line.split()[1]) * 1024
+                            except Exception:
+                                pass
+                        elif line.startswith("VmSize:"):
+                            try:
+                                vmsize = int(line.split()[1]) * 1024
+                            except Exception:
+                                pass
+                if vmrss is not None:
+                    info["rssBytes"] = int(vmrss)
+                    info["rssMB"] = round(vmrss / (1024 * 1024), 1)
+                if vmsize is not None:
+                    info["vmsBytes"] = int(vmsize)
+                    info["vmsMB"] = round(vmsize / (1024 * 1024), 1)
+            except Exception as e:
+                info["error"] = f"linux_mem_read_failed: {e}"
+            return jsonify(info)
+        # Fallback: psutil
+        try:
+            import psutil  # type: ignore
+            p = psutil.Process(pid)
+            mem = p.memory_info()
+            info["rssBytes"] = int(getattr(mem, "rss", 0))
+            info["vmsBytes"] = int(getattr(mem, "vms", 0))
+            info["rssMB"] = round(info["rssBytes"] / (1024 * 1024), 1)
+            info["vmsMB"] = round(info["vmsBytes"] / (1024 * 1024), 1)
+        except Exception:
+            pass
+        return jsonify(info)
+
     @app.route("/minotaur/analytics")
     @guard.require()
     def ui_analytics():

@@ -5,9 +5,20 @@ minotaurはジャッジプロトコルのプロキシとして振る舞うこと
 
 # Run
 ```bash
+# Increase OS file descriptor limit for safety (Linux/macOS)
 $ ulimit -n 16384
-$ uv run waitress-serve --listen=*:19384 --thread=1024 run:app
+
+# Recommended: start via our launcher so waitress uses poll() and sane defaults
+$ uv run python -m minotaur.app
+
+# Alternatively (waitress CLI). Keep threads reasonable (e.g., 64–128) and prefer poll().
+# Some waitress versions support --asyncore-use-poll; if not, omit it.
+$ uv run waitress-serve --listen=*:19384 --threads=128 --asyncore-use-poll run:app
 ```
+
+Notes:
+- Very large thread counts (e.g., 1000+) can cause too many open SQLite file descriptors, which makes select()-based servers crash with: ValueError: filedescriptor out of range in select().
+- Using poll() (our launcher does this) and keeping `--threads` ≤ 128 avoids this. If you still hit limits, check `/minotaur/fd_info` in the UI.
 
 # Client-Side
 local_judge_server.py を参照し、すべての POST リクエストで以下を設定します
