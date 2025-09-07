@@ -23,25 +23,32 @@ import datetime
 # BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
 BASE_URL = "http://tk2-401-41624.vs.sakura.ne.jp:19384/"
 DOORS = "012345"  # door labels as characters
-AGENT_NAME = 'nodchip:lstar2'
+AGENT_NAME = "nodchip:lstar2"
 AGENT_ID = str(os.getpid())
 TIMEOUT_SEC = 6000
 PROGRESS_DURATION_SEC = -1.0
 
 # ==== API client ==== #
 
+
 class AedificiumClient:
-    def __init__(self, base_url: str = os.getenv("BASE_URL", BASE_URL), team_id: Optional[str] = None):
+    def __init__(
+        self,
+        base_url: str = os.getenv("BASE_URL", BASE_URL),
+        team_id: Optional[str] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         print(f"{self.base_url=}")
         self.id = team_id
 
     def _post(self, path: str, payload: Dict) -> Dict:
         headers = {
-            'X-Agent-Name': AGENT_NAME,
-            'X-Agent-ID': AGENT_ID,
+            "X-Agent-Name": AGENT_NAME,
+            "X-Agent-ID": AGENT_ID,
         }
-        r = requests.post(f"{self.base_url}{path}", json=payload, timeout=TIMEOUT_SEC, headers=headers)
+        r = requests.post(
+            f"{self.base_url}{path}", json=payload, timeout=TIMEOUT_SEC, headers=headers
+        )
         r.raise_for_status()
         return r.json()
 
@@ -66,17 +73,21 @@ class AedificiumClient:
         j = self._post("/guess", {"id": self.id, "map": guess_map})
         return bool(j.get("correct", False))
 
+
 # ==== Oracle with batching, caching, and per-plan length budgeting ==== #
+
 
 def door_steps(plan: str) -> int:
     """Count door-steps (digits 0..5); '[c]' does not count."""
     return sum(ch in DOORS for ch in plan)
+
 
 class ExploreOracle:
     """
     Cache membership: plan -> full trace (list[int], length = door_steps(plan)+1)
     'g(w)' returns final label after executing plan w (digits + optional [c] markings).
     """
+
     def __init__(self, client: AedificiumClient, max_steps_per_plan: int):
         self.client = client
         self.max_steps = max_steps_per_plan
@@ -109,7 +120,13 @@ class ExploreOracle:
                 batch.append(p)
         self.pending.clear()
         results, _qc = self.client.explore(batch)
-        if self.last_qc_output_datetime + datetime.timedelta(seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))) < datetime.datetime.now():
+        if (
+            self.last_qc_output_datetime
+            + datetime.timedelta(
+                seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))
+            )
+            < datetime.datetime.now()
+        ):
             self.last_qc_output_datetime = datetime.datetime.now()
             print(f"{_qc=}", flush=True)
         if len(results) != len(batch):
@@ -134,13 +151,18 @@ class ExploreOracle:
             self.commit()
         return self.last_label[plan]
 
+
 # ==== Utilities to compose plans ==== #
+
 
 def concat(u: str, v: str) -> str:
     """String concat with trivial fast path for empty."""
-    if not u: return v
-    if not v: return u
+    if not u:
+        return v
+    if not v:
+        return u
     return u + v
+
 
 def mark(c: int) -> str:
     """Return bracket token like '[2]'."""
@@ -148,15 +170,18 @@ def mark(c: int) -> str:
         raise ValueError("mark must be 0..3")
     return f"[{c}]"
 
+
 # ==== L* for Moore with optional marking-based splitting ==== #
+
 
 @dataclass
 class Hypothesis:
-    row_of: Dict[str, Tuple[int, ...]]          # signature for S reps
-    idx_of_row: Dict[Tuple[int, ...], int]      # row -> state index
-    rep: List[str]                               # representative access plan per state
-    outputs: List[int]                           # Moore output per state
-    delta: List[List[int]]                       # next state index by door
+    row_of: Dict[str, Tuple[int, ...]]  # signature for S reps
+    idx_of_row: Dict[Tuple[int, ...], int]  # row -> state index
+    rep: List[str]  # representative access plan per state
+    outputs: List[int]  # Moore output per state
+    delta: List[List[int]]  # next state index by door
+
 
 class LStarMooreWithMarks:
     """
@@ -164,10 +189,11 @@ class LStarMooreWithMarks:
     E: distinguishing suffixes (digits only, for the base table)
     For splitting indistinguishable copies, we synthesize plans s + [c] + w on-demand.
     """
+
     def __init__(self, oracle: ExploreOracle, rnd: random.Random = random.Random(0)):
         self.o = oracle
-        self.S: List[str] = [""]                 # access prefixes (digits only)
-        self.E: List[str] = [""]                 # suffixes (digits only)
+        self.S: List[str] = [""]  # access prefixes (digits only)
+        self.E: List[str] = [""]  # suffixes (digits only)
         self.rnd = rnd
         # tiny warm-up to get init label
         self.o.ensure_all(["0"])
@@ -201,14 +227,17 @@ class LStarMooreWithMarks:
                     return ua
         return None
 
-    def inconsistency(self, rows: Dict[str, Tuple[int, ...]]) -> Optional[Tuple[str, str, str]]:
+    def inconsistency(
+        self, rows: Dict[str, Tuple[int, ...]]
+    ) -> Optional[Tuple[str, str, str]]:
         buckets: Dict[Tuple[int, ...], List[str]] = {}
         for s in self.S:
             buckets.setdefault(rows[s], []).append(s)
         for sig, group in buckets.items():
-            if len(group) <= 1: continue
+            if len(group) <= 1:
+                continue
             for i in range(len(group)):
-                for j in range(i+1, len(group)):
+                for j in range(i + 1, len(group)):
                     s1, s2 = group[i], group[j]
                     for a in DOORS:
                         if self.row(s1 + a) != self.row(s2 + a):
@@ -227,16 +256,20 @@ class LStarMooreWithMarks:
         outputs = [tuple_row[0] for tuple_row in idx_of_row.keys()]
         # transitions
         k = len(rep)
-        delta = [[0]*6 for _ in range(k)]
+        delta = [[0] * 6 for _ in range(k)]
         for i, s in enumerate(rep):
             for d in range(6):
                 r_next = self.row(s + str(d))
                 j = idx_of_row[r_next]
                 delta[i][d] = j
-        return Hypothesis(row_of=rows, idx_of_row=idx_of_row, rep=rep, outputs=outputs, delta=delta)
+        return Hypothesis(
+            row_of=rows, idx_of_row=idx_of_row, rep=rep, outputs=outputs, delta=delta
+        )
 
     # --- equivalence testing (cheap, batched) --- #
-    def find_counterexample(self, hyp: Hypothesis, max_len: int = 8, trials: int = 300) -> Optional[str]:
+    def find_counterexample(
+        self, hyp: Hypothesis, max_len: int = 8, trials: int = 300
+    ) -> Optional[str]:
         tests: Set[str] = set()
         # small systematic suite
         frontier = [""]
@@ -269,7 +302,9 @@ class LStarMooreWithMarks:
                 return w
         return None
 
-    def learn(self, marking_colors: List[int], W_suffixes: List[str], max_iters: int = 200) -> Hypothesis:
+    def learn(
+        self, marking_colors: List[int], W_suffixes: List[str], max_iters: int = 200
+    ) -> Hypothesis:
         it = 0
         while True:
             it += 1
@@ -303,7 +338,7 @@ class LStarMooreWithMarks:
             ce = self.find_counterexample(hyp)
             if ce is not None:
                 # add all prefixes of ce to S (TTT-like shorter refinement)
-                for k in range(1, len(ce)+1):
+                for k in range(1, len(ce) + 1):
                     p = ce[:k]
                     if p not in self.S:
                         self.S.append(p)
@@ -311,9 +346,9 @@ class LStarMooreWithMarks:
 
             # done
             return hyp
-        
+
     def _filled(self, num_rooms, num_copies, graph):
-        used = [[False]*6 for _ in range(num_rooms)]
+        used = [[False] * 6 for _ in range(num_rooms)]
         for room in range(num_rooms):
             for door in range(6):
                 if used[room][door]:
@@ -332,7 +367,7 @@ class LStarMooreWithMarks:
                 used[other_room][other_door] = True
 
         num_total = 0
-        num_used = 0        
+        num_used = 0
         for room in range(num_rooms):
             for door in range(6):
                 num_total += 1
@@ -340,26 +375,40 @@ class LStarMooreWithMarks:
                     num_used += 1
         return num_used, num_total
 
-
     # DFSでコピーされた部屋を含めた地図を復元する。
-    def dfs(self,
-            quotient_graph: List[List[Tuple[int, int]]], # 商グラフ [src部屋グループ番号][src扉番号] -> (dst部屋グループ番号, dst扉番号)
-            graph: Dict[Tuple[int, int, int], Tuple[int, int, int]], # 構築中のグラフ (src部屋グループ番号, src部屋のコピー番号, src扉番号) -> (dst部屋グループ番号, dst部屋のコピー番号, dst扉番号)
-            edges: Set[Tuple[Tuple[int, int, int], Tuple[int, int, int]]], # これまでに見つけたエッジ
-            prev_room_group: int, # 直前の部屋グループ番号
-            prev_copy_index: int, # 直前の部屋のコピー番号
-            prev_next_door: int, # 直前の部屋の扉番号
-            current_room_group: int, # 現在の部屋グループ番号
-            current_last_door: int, # 現在の部屋に入ってきたときの扉番号
-            past_plan: List[str], # "[(新しい色)](扉番号)"のリスト
-            original_states: List[int], # 元のラベル
-            seen_count: List[int], # 各部屋グループ内で見つけたコピーの数
-            path: List[Tuple[int, int, int]], # これまで辿ってきたパス (部屋グループ番号, 部屋のコピー番号, 次に開けるドア番号)
-            num_rooms: int, # 部屋数
-            num_copies: int, # コピーの数
-            ):
+    def dfs(
+        self,
+        quotient_graph: List[
+            List[Tuple[int, int]]
+        ],  # 商グラフ [src部屋グループ番号][src扉番号] -> (dst部屋グループ番号, dst扉番号)
+        graph: Dict[
+            Tuple[int, int, int], Tuple[int, int, int]
+        ],  # 構築中のグラフ (src部屋グループ番号, src部屋のコピー番号, src扉番号) -> (dst部屋グループ番号, dst部屋のコピー番号, dst扉番号)
+        edges: Set[
+            Tuple[Tuple[int, int, int], Tuple[int, int, int]]
+        ],  # これまでに見つけたエッジ
+        prev_room_group: int,  # 直前の部屋グループ番号
+        prev_copy_index: int,  # 直前の部屋のコピー番号
+        prev_next_door: int,  # 直前の部屋の扉番号
+        current_room_group: int,  # 現在の部屋グループ番号
+        current_last_door: int,  # 現在の部屋に入ってきたときの扉番号
+        past_plan: List[str],  # "[(新しい色)](扉番号)"のリスト
+        original_states: List[int],  # 元のラベル
+        seen_count: List[int],  # 各部屋グループ内で見つけたコピーの数
+        path: List[
+            Tuple[int, int, int]
+        ],  # これまで辿ってきたパス (部屋グループ番号, 部屋のコピー番号, 次に開けるドア番号)
+        num_rooms: int,  # 部屋数
+        num_copies: int,  # コピーの数
+    ):
         num_used, num_total = self._filled(num_rooms, num_copies, graph)
-        if self.last_dfs_output_datetime + datetime.timedelta(seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))) < datetime.datetime.now():
+        if (
+            self.last_dfs_output_datetime
+            + datetime.timedelta(
+                seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))
+            )
+            < datetime.datetime.now()
+        ):
             self.last_dfs_output_datetime = datetime.datetime.now()
             print(f"num_used/num_total={num_used}/{num_total} {path=}", flush=True)
         if num_used == num_total:
@@ -372,7 +421,10 @@ class LStarMooreWithMarks:
         current_copy_index = None
         if current_state == original_states[current_room_group]:
             current_copy_index = seen_count[current_room_group]
-            new_state = (original_states[current_room_group] + (seen_count[current_room_group] + 1)) % 4
+            new_state = (
+                original_states[current_room_group]
+                + (seen_count[current_room_group] + 1)
+            ) % 4
             seen_count[current_room_group] += 1
         else:
             idx = (current_state - original_states[current_room_group] - 1 + 4) % 4
@@ -380,15 +432,29 @@ class LStarMooreWithMarks:
             current_copy_index = idx
 
         if prev_room_group is not None:
-            edge = ((prev_room_group, prev_copy_index, prev_next_door), (current_room_group, current_copy_index, current_last_door))
+            edge = (
+                (prev_room_group, prev_copy_index, prev_next_door),
+                (current_room_group, current_copy_index, current_last_door),
+            )
             if edge in edges:
                 return
-            
-            edges.add(edge)
-            graph[(prev_room_group, prev_copy_index, prev_next_door)] = (current_room_group, current_copy_index, current_last_door)
-            graph[(current_room_group, current_copy_index, current_last_door)] = (prev_room_group, prev_copy_index, prev_next_door)
 
-        if prev_room_group == current_room_group and prev_copy_index == current_copy_index:
+            edges.add(edge)
+            graph[(prev_room_group, prev_copy_index, prev_next_door)] = (
+                current_room_group,
+                current_copy_index,
+                current_last_door,
+            )
+            graph[(current_room_group, current_copy_index, current_last_door)] = (
+                prev_room_group,
+                prev_copy_index,
+                prev_next_door,
+            )
+
+        if (
+            prev_room_group == current_room_group
+            and prev_copy_index == current_copy_index
+        ):
             # セルフループの場合、planを短くするために抜ける。
             return
 
@@ -400,7 +466,7 @@ class LStarMooreWithMarks:
                 past_plan.append(f"{next_door}")
 
             prefetch.append("".join(past_plan))
-            
+
             past_plan.pop()
         self.o.ensure_all(prefetch)
         self.o.commit()
@@ -412,19 +478,35 @@ class LStarMooreWithMarks:
                 past_plan.append(f"{next_door}")
             path.append((current_room_group, current_copy_index, next_door))
 
-            next_room_group, next_last_door = quotient_graph[current_room_group][next_door]
-            self.dfs(quotient_graph, graph, edges, current_room_group, current_copy_index, next_door, next_room_group, next_last_door, past_plan, original_states, seen_count, path, num_rooms, num_copies)
-            
+            next_room_group, next_last_door = quotient_graph[current_room_group][
+                next_door
+            ]
+            self.dfs(
+                quotient_graph,
+                graph,
+                edges,
+                current_room_group,
+                current_copy_index,
+                next_door,
+                next_room_group,
+                next_last_door,
+                past_plan,
+                original_states,
+                seen_count,
+                path,
+                num_rooms,
+                num_copies,
+            )
+
             path.pop()
             past_plan.pop()
-
 
     def reconstruct(self, hyp: Hypothesis, num_rooms: int):
         num_room_groups = len(hyp.outputs)
         # [src部屋グループ番号, src扉番号] -> (dst部屋グループ番号, dst扉番号)
-        quotient_graph = [[(-1, -1)]*6 for _ in range(num_room_groups)]
+        quotient_graph = [[(-1, -1)] * 6 for _ in range(num_room_groups)]
 
-        used = [[False]*6 for _ in range(num_room_groups)]
+        used = [[False] * 6 for _ in range(num_room_groups)]
         for room in range(num_room_groups):
             for door in range(6):
                 if used[room][door]:
@@ -453,10 +535,25 @@ class LStarMooreWithMarks:
         edges = set()
         past_plan = list()
         original_states = hyp.outputs[:]
-        seen_count: List[int] = [0]*num_room_groups
+        seen_count: List[int] = [0] * num_room_groups
         path = list()
         num_copies = num_rooms // num_room_groups
-        self.dfs(quotient_graph, graph, edges, None, None, None, 0, None, past_plan, original_states, seen_count, path, num_rooms, num_copies)
+        self.dfs(
+            quotient_graph,
+            graph,
+            edges,
+            None,
+            None,
+            None,
+            0,
+            None,
+            past_plan,
+            original_states,
+            seen_count,
+            path,
+            num_rooms,
+            num_copies,
+        )
 
         rooms = []
         for output in hyp.outputs:
@@ -464,8 +561,8 @@ class LStarMooreWithMarks:
 
         starting_room_group = hyp.idx_of_row[hyp.row_of[""]]
         starting_room = starting_room_group * num_copies
-        
-        used = [[False]*6 for _ in range(num_rooms)]
+
+        used = [[False] * 6 for _ in range(num_rooms)]
         connections = []
         for room in range(num_rooms):
             for door in range(6):
@@ -474,27 +571,37 @@ class LStarMooreWithMarks:
                 room_group = room // num_copies
                 copy_index = room % num_copies
 
-                other_room_group, other_copy_index, other_door = graph[(room_group, copy_index, door)]
+                other_room_group, other_copy_index, other_door = graph[
+                    (room_group, copy_index, door)
+                ]
                 other_room = other_room_group * num_copies + other_copy_index
 
-                connections.append({
-                    "from": {"room": room, "door": door},
-                    "to":   {"room": other_room, "door": other_door},
-                })
+                connections.append(
+                    {
+                        "from": {"room": room, "door": door},
+                        "to": {"room": other_room, "door": other_door},
+                    }
+                )
 
                 used[room][door] = True
                 used[other_room][other_door] = True
 
-        return {"rooms": rooms, "startingRoom": starting_room, "connections": connections}
+        return {
+            "rooms": rooms,
+            "startingRoom": starting_room,
+            "connections": connections,
+        }
+
 
 # ==== Build /guess payload ==== #
+
 
 def build_guess(hyp: Hypothesis) -> Dict:
     n = len(hyp.outputs)
     rooms = hyp.outputs[:]  # 2-bit labels
     starting_room = hyp.idx_of_row[hyp.row_of[""]]
 
-    used = [[False]*6 for _ in range(n)]
+    used = [[False] * 6 for _ in range(n)]
     connections = []
     for r in range(n):
         for a in range(6):
@@ -515,21 +622,25 @@ def build_guess(hyp: Hypothesis) -> Dict:
                         break
             if partner is None:
                 partner = a if r == r2 else 0
-            connections.append({
-                "from": {"room": r, "door": a},
-                "to":   {"room": r2, "door": partner},
-            })
+            connections.append(
+                {
+                    "from": {"room": r, "door": a},
+                    "to": {"room": r2, "door": partner},
+                }
+            )
             used[r][a] = True
             used[r2][partner] = True
 
     return {"rooms": rooms, "startingRoom": starting_room, "connections": connections}
 
+
 # ==== Example runner ==== #
+
 
 def main(problem_name: str, n_rooms: int):
     # ---- Configuration ----
-    MAX_DOOR_STEPS_PER_PLAN = 6 * n_rooms                 # per addendum
-    team_id = os.getenv("ICFP_ID")                        # set your secret id
+    MAX_DOOR_STEPS_PER_PLAN = 6 * n_rooms  # per addendum
+    team_id = os.getenv("ICFP_ID")  # set your secret id
 
     client = AedificiumClient(team_id=team_id)
     if client.id is None:
@@ -585,6 +696,8 @@ if __name__ == "__main__":
             try:
                 main(problem_name, n_rooms)
             except requests.HTTPError as e:
-                print("HTTP error:", e.response.text if hasattr(e, "response") else str(e))
+                print(
+                    "HTTP error:", e.response.text if hasattr(e, "response") else str(e)
+                )
             except Exception as ex:
                 print("Error:", ex.format_exc())
