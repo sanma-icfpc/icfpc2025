@@ -27,7 +27,7 @@ DOORS = "012345"  # door labels as characters
 AGENT_NAME = "nodchip:lstar2"
 AGENT_ID = str(os.getpid())
 TIMEOUT_SEC = 6000
-PROGRESS_DURATION_SEC = -1.0
+PROGRESS_DURATION_SEC = float(os.getenv("PROGRESS_DURATION_SEC", -1.0))
 
 # ==== API client ==== #
 
@@ -123,9 +123,7 @@ class ExploreOracle:
         results, _qc = self.client.explore(batch)
         if (
             self.last_qc_output_datetime
-            + datetime.timedelta(
-                seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))
-            )
+            + datetime.timedelta(seconds=PROGRESS_DURATION_SEC)
             < datetime.datetime.now()
         ):
             self.last_qc_output_datetime = datetime.datetime.now()
@@ -405,9 +403,7 @@ class LStarMooreWithMarks:
         num_used, num_total = self._filled(num_rooms, num_copies, graph)
         if (
             self.last_dfs_output_datetime
-            + datetime.timedelta(
-                seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))
-            )
+            + datetime.timedelta(seconds=PROGRESS_DURATION_SEC)
             < datetime.datetime.now()
         ):
             self.last_dfs_output_datetime = datetime.datetime.now()
@@ -427,30 +423,22 @@ class LStarMooreWithMarks:
                 + (seen_count[current_room_group] + 1)
             ) % 4
             seen_count[current_room_group] += 1
+            assert seen_count[current_room_group] <= num_copies
         else:
             idx = (current_state - original_states[current_room_group] - 1 + 4) % 4
             assert idx < num_copies
             current_copy_index = idx
 
         if prev_room_group is not None:
-            edge = (
-                (prev_room_group, prev_copy_index, prev_next_door),
-                (current_room_group, current_copy_index, current_last_door),
-            )
-            if edge in edges:
+            u = (prev_room_group, prev_copy_index, prev_next_door)
+            v = (current_room_group, current_copy_index, current_last_door)
+            if (u, v) in edges:
                 return
+            edges.add((u, v))
+            edges.add((v, u))
 
-            edges.add(edge)
-            graph[(prev_room_group, prev_copy_index, prev_next_door)] = (
-                current_room_group,
-                current_copy_index,
-                current_last_door,
-            )
-            graph[(current_room_group, current_copy_index, current_last_door)] = (
-                prev_room_group,
-                prev_copy_index,
-                prev_next_door,
-            )
+            graph[u] = v
+            graph[v] = u
 
         if (
             prev_room_group == current_room_group
@@ -681,10 +669,10 @@ if __name__ == "__main__":
         # ("tertius", 18),
         # ("quartus", 24),
         # ("quintus", 30),
-        ("aleph", 12),
-        ("beth", 24),
-        ("gimel", 36),
-        ("daleth", 48),
+        # ("aleph", 12),
+        # ("beth", 24),
+        # ("gimel", 36),
+        # ("daleth", 48),
         ("he", 60),
         ("vau", 18),
         ("zain", 36),
