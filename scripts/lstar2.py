@@ -17,6 +17,7 @@ import os
 import json
 import random
 import requests
+import datetime
 
 
 # BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
@@ -82,6 +83,8 @@ class ExploreOracle:
         self.pending: List[str] = []
         self.init_label: Optional[int] = None
 
+        self.last_qc_output_datetime = datetime.datetime.now()
+
     def enqueue(self, plan: str):
         if plan and plan not in self.trace_cache and plan not in self.pending:
             # if door_steps(plan) > self.max_steps:
@@ -104,7 +107,9 @@ class ExploreOracle:
                 batch.append(p)
         self.pending.clear()
         results, _qc = self.client.explore(batch)
-        print(f"{_qc=}")
+        if self.last_qc_output_datetime + datetime.timedelta(seconds=10.0) < datetime.datetime.now():
+            self.last_qc_output_datetime = datetime.datetime.now()
+            print(f"{_qc=}", flush=True)
         if len(results) != len(batch):
             raise RuntimeError("API returned results of different length")
         for p, trace in zip(batch, results):
@@ -165,6 +170,8 @@ class LStarMooreWithMarks:
         # tiny warm-up to get init label
         self.o.ensure_all(["0"])
         self.o.commit()
+
+        self.last_dfs_output_datetime = datetime.datetime.now()
 
     # --- observation table primitives --- #
     def row(self, u: str) -> Tuple[int, ...]:
@@ -350,7 +357,9 @@ class LStarMooreWithMarks:
             num_copies: int, # コピーの数
             ):
         num_used, num_total = self._filled(num_rooms, num_copies, graph)
-        print(f"num_used/num_total={num_used}/{num_total} {path=}")
+        if self.last_dfs_output_datetime + datetime.timedelta(seconds=10.0) < datetime.datetime.now():
+            self.last_dfs_output_datetime = datetime.datetime.now()
+            print(f"num_used/num_total={num_used}/{num_total} {path=}", flush=True)
         if num_used == num_total:
             # すべての扉をたどったら抜ける。
             return
