@@ -407,22 +407,34 @@ function showRankingAt(ts) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Restore persisted settings
+  // Restore settings from URL params (?hl=a,b&filter=1)
   const highlightInput = document.getElementById("highlightInput");
-  const savedHL = localStorage.getItem('leaderboard.highlight') || '';
-  highlightInput.value = savedHL;
-  highlightTeams = savedHL.split(",").map(s => s.trim()).filter(s => s);
-
   const filterCheckbox = document.getElementById('filterMode');
-  const savedFilter = localStorage.getItem('leaderboard.filterMode');
-  filterMode = savedFilter === 'true';
+  const params = new URLSearchParams(window.location.search);
+  const hlParam = params.get('hl') || '';
+  const filterParam = params.get('filter');
+  highlightInput.value = hlParam;
+  highlightTeams = hlParam.split(",").map(s => s.trim()).filter(s => s);
+  filterMode = filterParam === '1' || filterParam === 'true';
   filterCheckbox.checked = filterMode;
+
+  function setUrlParam(name, value) {
+    const p = new URLSearchParams(window.location.search);
+    if (value === undefined || value === null || value === '' || value === false) {
+      p.delete(name);
+    } else {
+      p.set(name, String(value));
+    }
+    const q = p.toString();
+    const newUrl = q ? `${location.pathname}?${q}` : location.pathname;
+    history.replaceState({}, '', newUrl);
+  }
 
   fetchData();
 
   highlightInput.addEventListener("input", (e) => {
     highlightTeams = e.target.value.split(",").map(s => s.trim()).filter(s => s);
-    localStorage.setItem('leaderboard.highlight', e.target.value);
+    setUrlParam('hl', e.target.value);
     updateChart();
     if (selectedTs) {
       showRankingAt(selectedTs);
@@ -434,7 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   filterCheckbox.addEventListener('change', (e) => {
     filterMode = e.target.checked;
-    localStorage.setItem('leaderboard.filterMode', String(filterMode));
+    setUrlParam('filter', filterMode ? '1' : null);
     updateChart();
     if (selectedTs) {
       showRankingAt(selectedTs);
