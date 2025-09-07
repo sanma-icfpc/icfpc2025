@@ -29,6 +29,15 @@ def create_events_bp(ctx: AppCtx) -> Blueprint:
         n = int(row["n"]) if row else 0
         return jsonify({"n": n})
 
+    @bp.route("/official_base")
+    @guard.require()
+    def official_base():
+        try:
+            ob = ctx.s.official_base or None
+            return jsonify({"official_base": ob})
+        except Exception:
+            return jsonify({"official_base": None})
+
     @bp.route("/cancel_running", methods=["POST"])
     @guard.require()
     def cancel_running():
@@ -121,4 +130,3 @@ def create_events_bp(ctx: AppCtx) -> Blueprint:
         return jsonify({"ok": True, "cancelled": cancelled})
 
     return bp
-

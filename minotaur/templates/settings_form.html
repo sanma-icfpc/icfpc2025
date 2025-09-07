@@ -3,6 +3,18 @@
     <label class="block text-sm font-medium text-gray-800">公式ベースURL（OFFICIAL_BASE）</label>
     <input class="w-full border rounded p-2 mt-1" placeholder="例: https://example.com" type="text" name="OFFICIAL_BASE" value="{{ official_base or '' }}" />
     <p class="text-xs text-gray-500 mt-1">上流（公式）APIのベースURL。未設定または空欄のときはMOCKモードで動作します。</p>
+    <div class="mt-2 flex items-center flex-wrap gap-2">
+      <button type="button" class="px-2 py-1 text-xs bg-gray-200 rounded"
+              onclick="const f=this.closest('form'); if (f) { const i=f.querySelector('input[name=OFFICIAL_BASE]'); if (i) i.value='http://127.0.0.1:8009/'; }">
+        http://127.0.0.1:8009/
+      </button>
+      <span class="text-xs text-gray-400 mr-2">(local)</span>
+      <button type="button" class="ml-2 px-2 py-1 text-xs bg-gray-200 rounded"
+              onclick="const f=this.closest('form'); if (f) { const i=f.querySelector('input[name=OFFICIAL_BASE]'); if (i) i.value='https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com/'; }">
+        https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com/
+      </button>
+      <span class="text-xs text-gray-400">(official)</span>
+    </div>
   </div>
   <div>
     <label class="block text-sm font-medium text-gray-800">トライアルのリース秒数（TRIAL_TTL_SEC）</label>

@@ -47,6 +47,10 @@
             <span class="mx-1 text-gray-400">—</span>
             <span class="">ICFPC2025 Proxy & Scheduler</span>
           </div>
+          <div class="text-xs text-gray-500 truncate" title="Current OFFICIAL_BASE">
+            <span class="hidden sm:inline">BASE:</span>
+            <span id="official-base-text">{{ official_base or '(mock)' }}</span>
+          </div>
         </div>
         <div class="text-sm text-gray-600 flex items-center space-x-2">
           <span>🤖</span>
@@ -279,6 +283,21 @@
         .then(j => { const el = document.getElementById('agent-count'); if (el && typeof j.n === 'number') el.textContent = j.n; })
         .catch(() => {});
     }
+    function refreshOfficialBase() {
+      try {
+        fetch('/minotaur/official_base', { credentials: 'same-origin' })
+          .then(r => r.json())
+          .then(j => {
+            try {
+              const el = document.getElementById('official-base-text');
+              if (!el) return;
+              const ob = (j && typeof j.official_base === 'string' && j.official_base) ? j.official_base : '';
+              el.textContent = ob ? ob : '(mock)';
+            } catch (_) {}
+          })
+          .catch(() => {});
+      } catch (_) {}
+    }
     function startSSE() {
       if (!autoUpdateEnabled) return;
       stopSSE();
@@ -298,7 +317,7 @@
               loadStatus({ skipRecent: true });
             }
           } catch (_) {}
-          updateAgentCount(); refreshPriorityStatuses();
+          updateAgentCount(); refreshPriorityStatuses(); refreshOfficialBase();
           try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
           try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
           try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
@@ -412,7 +431,15 @@
       const form = ev.target;
       const fd = new FormData(form);
       fetch('/minotaur/settings', { method: 'POST', body: fd, credentials: 'same-origin' })
-        .then(() => { closeModal(); })
+        .then(() => {
+          // Reflect OFFICIAL_BASE change in header (best-effort, no reload needed)
+          try {
+            const ob = (fd.get('OFFICIAL_BASE') || '').toString();
+            const el = document.getElementById('official-base-text');
+            if (el) el.textContent = ob ? ob : '(mock)';
+          } catch (_) {}
+          closeModal();
+        })
         .catch(() => { closeModal(); })
         .finally(() => { loadStatus(); });
       return false;
@@ -649,6 +676,8 @@
         requestAnimationFrame(() => setTimeout(run, 0));
       }
     }
+    // expose for other bundles
+    window.refreshOfficialBase = refreshOfficialBase;
     function setSSEStatus(isOnline) {
       const el = document.getElementById('sse-status');
       if (!el) return;
@@ -735,6 +764,12 @@
         once();
       }
     })();
+
+    // Manual refresh for Recent pane
+    function manualRefreshRecent() {
+      // Refresh all panes including Recent
+      loadStatus();
+    }
   </script>
   <script src="/static/js/status.js"></script>
   <script src="/static/js/priorities.js"></script>

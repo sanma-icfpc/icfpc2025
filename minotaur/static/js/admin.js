@@ -18,7 +18,15 @@
     const form = ev.target;
     const fd = new FormData(form);
     fetch('/minotaur/settings', { method: 'POST', body: fd, credentials: 'same-origin' })
-      .then(() => { closeModal(); })
+      .then(() => {
+        // Reflect OFFICIAL_BASE change in header immediately
+        try {
+          const ob = (fd.get('OFFICIAL_BASE') || '').toString();
+          const el = document.getElementById('official-base-text');
+          if (el) el.textContent = ob ? ob : '(mock)';
+        } catch (_) {}
+        closeModal();
+      })
       .catch(() => { closeModal(); })
       .finally(() => { try { window.loadStatus && window.loadStatus(); } catch (_) {} });
     return false;
@@ -34,4 +42,3 @@
   window.submitSettings = submitSettings;
   window.downloadDB = downloadDB;
 })();
-
