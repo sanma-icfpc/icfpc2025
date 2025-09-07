@@ -80,6 +80,7 @@
     let autoUpdateEnabled = true; // default ON
     let es = null; // EventSource instance when auto-update is ON
     let recentPage = 1; // pagination for Recent tab
+    let recentFilter = '';
     let expandedKeys = new Set();
     let detailsOpenIdx = [];
     let innerScrollTops = [];
@@ -161,6 +162,13 @@
         if (!Number.isNaN(v) && v > 0) recentPage = v;
       } catch (_) {}
     }
+    function initRecentFilterFromURL() {
+      try {
+        const url = new URL(window.location.href);
+        const v = url.searchParams.get('recent_filter') || '';
+        recentFilter = v;
+      } catch (_) { recentFilter = ''; }
+    }
     function recentPrev() {
       const { pages } = getRecentPagesFromDOM();
       if (recentPage > 1) { recentPage -= 1; setURLParam('recent_page', recentPage); loadStatus(); }
@@ -211,7 +219,10 @@
       const prevWinY = window.scrollY || window.pageYOffset || 0;
       captureUIState();
       statusInFlight = true;
-      const url = '/minotaur/status?recent_page=' + encodeURIComponent(recentPage);
+      let url = '/minotaur/status?recent_page=' + encodeURIComponent(recentPage);
+      if (typeof recentFilter === 'string') {
+        url += '&recent_filter=' + encodeURIComponent(recentFilter);
+      }
       fetch(url, { credentials: 'same-origin' })
         .then(r => r.text())
         .then(html => {
@@ -234,6 +245,7 @@
               bindRecentPagerEvents();
             }
           } catch (_) {}
+          try { bindRecentFilterEvents(); } catch (_) {}
         })
         .catch(() => {})
         .finally(() => { statusInFlight = false; [rPane,qPane,rcPane].forEach((el,i)=>{ try{ el.scrollTop = prevScrolls[i]; }catch(_){}}); try { window.scrollTo(0, prevWinY); } catch(_){}; restoreUIState(); updateRelativeTimes(); });
@@ -298,6 +310,7 @@
     }
     document.addEventListener('DOMContentLoaded', function() {
       initRecentPageFromURL();
+      initRecentFilterFromURL();
       loadStatus();
       loadPriorities(true);
       updateAgentCount();
@@ -306,6 +319,27 @@
       startSSE();
       setInterval(updateRelativeTimes, 1000);
     });
+
+    function bindRecentFilterEvents() {
+      try {
+        const input = document.getElementById('recent-filter-input');
+        if (!input) return;
+        input.value = typeof recentFilter === 'string' ? recentFilter : '';
+        const apply = () => {
+          const v = (input.value || '').trim();
+          recentFilter = v;
+          setURLParam('recent_filter', v);
+          // reset to page 1 when filter changes
+          recentPage = 1;
+          setURLParam('recent_page', recentPage);
+          loadStatus();
+        };
+        input.addEventListener('keydown', function(ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); apply(); }
+        });
+        input.addEventListener('change', function(_) { apply(); });
+      } catch (_) {}
+    }
 
     // ----- Modal load + submit (vanilla) -----
     function openModal() {
