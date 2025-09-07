@@ -282,6 +282,20 @@
       try { if (es) { es.close(); } } catch (_) {}
       es = null;
     }
+    // Proactively close SSE on navigation/unload so the server frees
+    // the worker thread immediately instead of waiting for timeout.
+    function _cleanupSSE() { try { stopSSE(); } catch (_) {} }
+    window.addEventListener('beforeunload', _cleanupSSE);
+    window.addEventListener('pagehide', _cleanupSSE);
+    document.addEventListener('visibilitychange', function() {
+      try {
+        if (document.hidden) {
+          stopSSE();
+        } else if (autoUpdateEnabled) {
+          startSSE();
+        }
+      } catch (_) {}
+    });
 
     function updateAutoToggleUI() {
       const t = document.getElementById('auto-toggle');

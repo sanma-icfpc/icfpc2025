@@ -192,7 +192,13 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
     @app.route("/minotaur/stream")
     @guard.require()
     def ui_stream():
-        headers = {"Content-Type": "text/event-stream", "Cache-Control": "no-cache"}
+        headers = {
+            "Content-Type": "text/event-stream",
+            # WSGI must not set hop-by-hop headers like "Connection" (PEP 3333)
+            # Cache-Control and X-Accel-Buffering (for nginx) are safe.
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
         return Response(stream_with_context(ctx.bus.stream()), headers=headers)
 
     @app.route("/minotaur/settings", methods=["GET", "POST"])

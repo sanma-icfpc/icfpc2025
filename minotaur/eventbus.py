@@ -21,7 +21,9 @@ class EventBus:
         last = 0
         while True:
             with self._cv:
-                self._cv.wait(timeout=60.0)
+                # Short timeout so disconnected clients are noticed quickly,
+                # freeing the serving thread even under rapid page reloads.
+                self._cv.wait(timeout=2.0)
                 cur = self._seq
             if cur != last:
                 last = cur
@@ -29,4 +31,3 @@ class EventBus:
                 yield f"data: {cur}\n\n".encode("utf-8")
             else:
                 yield b"event: ping\ndata: .\n\n"
-
