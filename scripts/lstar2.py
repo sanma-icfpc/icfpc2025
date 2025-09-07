@@ -26,6 +26,7 @@ DOORS = "012345"  # door labels as characters
 AGENT_NAME = 'nodchip:lstar2'
 AGENT_ID = str(os.getpid())
 TIMEOUT_SEC = 6000
+PROGRESS_DURATION_SEC = -1.0
 
 # ==== API client ==== #
 
@@ -108,7 +109,7 @@ class ExploreOracle:
                 batch.append(p)
         self.pending.clear()
         results, _qc = self.client.explore(batch)
-        if self.last_qc_output_datetime + datetime.timedelta(seconds=10.0) < datetime.datetime.now():
+        if self.last_qc_output_datetime + datetime.timedelta(seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))) < datetime.datetime.now():
             self.last_qc_output_datetime = datetime.datetime.now()
             print(f"{_qc=}", flush=True)
         if len(results) != len(batch):
@@ -358,7 +359,7 @@ class LStarMooreWithMarks:
             num_copies: int, # コピーの数
             ):
         num_used, num_total = self._filled(num_rooms, num_copies, graph)
-        if self.last_dfs_output_datetime + datetime.timedelta(seconds=10.0) < datetime.datetime.now():
+        if self.last_dfs_output_datetime + datetime.timedelta(seconds=float(os.getenv("PROGRESS_DURATION_SEC", PROGRESS_DURATION_SEC))) < datetime.datetime.now():
             self.last_dfs_output_datetime = datetime.datetime.now()
             print(f"num_used/num_total={num_used}/{num_total} {path=}", flush=True)
         if num_used == num_total:
@@ -390,6 +391,19 @@ class LStarMooreWithMarks:
         if prev_room_group == current_room_group and prev_copy_index == current_copy_index:
             # セルフループの場合、planを短くするために抜ける。
             return
+
+        prefetch = list()
+        for next_door in range(6):
+            if new_state is not None:
+                past_plan.append(f"[{new_state}]{next_door}")
+            else:
+                past_plan.append(f"{next_door}")
+
+            prefetch.append("".join(past_plan))
+            
+            past_plan.pop()
+        self.o.ensure_all(prefetch)
+        self.o.commit()
 
         for next_door in range(6):
             if new_state is not None:
@@ -549,6 +563,12 @@ def main(problem_name: str, n_rooms: int):
 
 if __name__ == "__main__":
     problems = [
+        # ("probatio", 3),
+        # ("primus", 6),
+        # ("secundus", 12),
+        # ("tertius", 18),
+        # ("quartus", 24),
+        # ("quintus", 30),
         ("aleph", 12),
         ("beth", 24),
         ("gimel", 36),
