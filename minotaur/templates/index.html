@@ -50,6 +50,9 @@
         <div class="flex items-center gap-2">
           <button class="px-3 py-1 bg-gray-600 text-white rounded" onclick="downloadDB()">DL SQLite3</button>
           <span id="db-size" class="text-xs text-gray-500">—</span>
+          <button class="ml-2 px-2 py-1 text-xs bg-gray-200 rounded" onclick="closeDbConns(); return false;">Close DB Conns</button>
+          <button id="btn-db-conn-stats" class="px-2 py-1 text-xs bg-gray-200 rounded" onclick="queryDbConnCount(this); return false;">Open Conns: ?</button>
+          <span id="db-conns" class="text-xs text-gray-500 ml-2">—</span>
         </div>
       </div>
       <div>
@@ -191,6 +194,52 @@
         }
       })
       .catch(() => { /* ignore */ });
+  }
+
+  function closeDbConns() {
+    const btns = document.querySelectorAll('#tab-admin button');
+    btns.forEach(b => b.disabled = true);
+    fetch('/minotaur/db_close_conns', { method: 'POST', credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          const el = document.getElementById('db-conns');
+          if (el && j && j.ok) {
+            const gen = (typeof j.generation === 'number') ? j.generation : '?';
+            const closedNow = (typeof j.closedNow === 'number') ? j.closedNow : 0;
+            const reg = (typeof j.registry === 'number') ? j.registry : '?';
+            el.textContent = `gen: ${gen} closedNow: ${closedNow} reg: ${reg}`;
+          }
+        } catch (_) {}
+        // Refresh related diagnostics
+        loadFDInfo();
+        loadDBInfo();
+        loadMemInfo();
+      })
+      .catch(() => {})
+      .finally(() => { btns.forEach(b => b.disabled = false); });
+  }
+
+  function queryDbConnCount(btn) {
+    if (!btn) btn = document.getElementById('btn-db-conn-stats');
+    if (!btn) return;
+    const label0 = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Open Conns: …';
+    fetch('/minotaur/db_conn_stats', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          if (j && j.ok) {
+            const n = (typeof j.count === 'number') ? j.count : '?';
+            btn.textContent = `Open Conns: ${n}`;
+          } else {
+            btn.textContent = 'Open Conns: error';
+          }
+        } catch (_) { btn.textContent = 'Open Conns: error'; }
+      })
+      .catch(() => { btn.textContent = 'Open Conns: error'; })
+      .finally(() => { btn.disabled = false; setTimeout(() => { /* keep result until next click */ }, 0); });
   }
 
   function loadFDInfo() {

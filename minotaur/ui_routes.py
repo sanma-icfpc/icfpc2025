@@ -337,6 +337,30 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             return jsonify({"error": "stat_failed"}), 500
 
+    @app.route("/minotaur/db_close_conns", methods=["POST"])
+    @guard.require()
+    def ui_db_close_conns():
+        try:
+            stats = dbm.close_all_connections()
+            # Nudge coordinator/scheduler in case it holds a stale conn and to trigger UI refresh
+            try:
+                if ctx.coord and ctx.coord.on_change:
+                    ctx.coord.on_change("db_close_conns")
+            except Exception:
+                pass
+            return jsonify({"ok": True, **stats})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/minotaur/db_conn_stats")
+    @guard.require()
+    def ui_db_conn_stats():
+        try:
+            st = dbm.conn_stats()
+            return jsonify({"ok": True, **st})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
     @app.route("/minotaur/fd_info")
     @guard.require()
     def ui_fd_info():

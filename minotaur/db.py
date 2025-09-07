@@ -9,6 +9,10 @@ from typing import Any, Iterable, List, Optional
 
 
 _LOCAL = threading.local()
+_REG_LOCK = threading.Lock()
+_REGISTRY: List[sqlite3.Connection] = []
+# Generation for rolling connections: bump to force per-thread reconnection lazily
+_GEN = 0
 
 
 def _ensure_parent_dir_for_path(db_path: str) -> None:
@@ -51,10 +55,39 @@ def _ensure_parent_dir_for_path(db_path: str) -> None:
         pass
 
 
+def _register_conn(conn: sqlite3.Connection) -> None:
+    with _REG_LOCK:
+        # Avoid duplicates
+        if conn not in _REGISTRY:
+            _REGISTRY.append(conn)
+
+
+def _unregister_conn(conn: sqlite3.Connection) -> None:
+    with _REG_LOCK:
+        try:
+            if conn in _REGISTRY:
+                _REGISTRY.remove(conn)
+        except Exception:
+            pass
+
+
 def get_conn(path: str) -> sqlite3.Connection:
+    # Lazy reconnection across threads via generation bump.
+    cur_gen: int = getattr(_LOCAL, "gen", -1)
     conn: Optional[sqlite3.Connection] = getattr(_LOCAL, "conn", None)
-    if conn is not None:
+    if conn is not None and cur_gen == _GEN:
         return conn
+    # If a stale conn exists for a previous generation, close and drop it.
+    if conn is not None and cur_gen != _GEN:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        try:
+            _unregister_conn(conn)
+        except Exception:
+            pass
+        conn = None
     # Enable URI when using shared in-memory DB or file: URIs
     use_uri = path.startswith("file:") or "mode=memory" in path or path.startswith("sqlite:")
     # Ensure directory exists for on-disk databases to avoid SQLITE_CANTOPEN
@@ -132,7 +165,9 @@ def get_conn(path: str) -> sqlite3.Connection:
                 conn.execute("PRAGMA temp_store=FILE;")
         except Exception:
             pass
+    _register_conn(conn)
     _LOCAL.conn = conn
+    _LOCAL.gen = _GEN
     return conn
 
 
@@ -150,14 +185,76 @@ class ConnProxy:
         return get_conn(self._path)
 
     # Common operations used by the codebase
+    def _retryable(self, e: Exception) -> bool:
+        try:
+            msg = str(e).lower()
+        except Exception:
+            return False
+        # Retry on transient/OS-level issues
+        return (
+            "disk i/o error" in msg
+            or "database is locked" in msg
+            or "unable to open database file" in msg
+        )
+
+    def _drop_thread_local(self) -> None:
+        try:
+            cur = getattr(_LOCAL, "conn", None)
+            if cur is not None:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                try:
+                    _unregister_conn(cur)
+                except Exception:
+                    pass
+                setattr(_LOCAL, "conn", None)
+        except Exception:
+            pass
+
     def execute(self, *args, **kwargs):
-        return self._conn().execute(*args, **kwargs)
+        try:
+            return self._conn().execute(*args, **kwargs)
+        except sqlite3.OperationalError as e:
+            if self._retryable(e):
+                # Optionally log
+                try:
+                    if (os.getenv("MINOTAUR_DB_DEBUG", "").strip().lower() in {"1","true","yes","on"}):
+                        print(f"[db.debug] execute retry after OperationalError: {e}", flush=True)
+                except Exception:
+                    pass
+                self._drop_thread_local()
+                return self._conn().execute(*args, **kwargs)
+            raise
 
     def executemany(self, *args, **kwargs):
-        return self._conn().executemany(*args, **kwargs)
+        try:
+            return self._conn().executemany(*args, **kwargs)
+        except sqlite3.OperationalError as e:
+            if self._retryable(e):
+                try:
+                    if (os.getenv("MINOTAUR_DB_DEBUG", "").strip().lower() in {"1","true","yes","on"}):
+                        print(f"[db.debug] executemany retry after OperationalError: {e}", flush=True)
+                except Exception:
+                    pass
+                self._drop_thread_local()
+                return self._conn().executemany(*args, **kwargs)
+            raise
 
     def cursor(self):
-        return self._conn().cursor()
+        try:
+            return self._conn().cursor()
+        except sqlite3.OperationalError as e:
+            if self._retryable(e):
+                try:
+                    if (os.getenv("MINOTAUR_DB_DEBUG", "").strip().lower() in {"1","true","yes","on"}):
+                        print(f"[db.debug] cursor retry after OperationalError: {e}", flush=True)
+                except Exception:
+                    pass
+                self._drop_thread_local()
+                return self._conn().cursor()
+            raise
 
     # Context manager passthrough (no-op under autocommit but keep parity)
     def __enter__(self):
@@ -169,6 +266,50 @@ class ConnProxy:
     # Generic attribute access passthrough
     def __getattr__(self, name):
         return getattr(self._conn(), name)
+
+
+def close_all_connections() -> dict:
+    """Safely roll connections by bumping generation; avoid cross-thread closes.
+
+    Rationale: Closing sqlite3.Connection from a thread other than the one
+    actively using it can cause transient errors on Windows. Instead, we:
+      - Bump a global generation so future `get_conn()` calls create fresh
+        connections and locally close any stale per-thread connection.
+      - Optionally close the current thread's connection immediately.
+
+    Returns a snapshot with the new generation and current registry size.
+    """
+    global _GEN
+    with _REG_LOCK:
+        _GEN += 1
+        reg_cnt = len(_REGISTRY)
+    closed_now = 0
+    try:
+        # Close current thread's connection (safe/owned by this thread)
+        cur = getattr(_LOCAL, "conn", None)
+        if cur is not None:
+            try:
+                cur.close()
+                closed_now += 1
+            except Exception:
+                pass
+            try:
+                _unregister_conn(cur)
+            except Exception:
+                pass
+            try:
+                setattr(_LOCAL, "conn", None)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {"generation": _GEN, "registry": reg_cnt, "closedNow": closed_now}
+
+
+def conn_stats() -> dict:
+    """Return a snapshot of the current connection registry."""
+    with _REG_LOCK:
+        return {"count": len(_REGISTRY), "generation": _GEN}
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
