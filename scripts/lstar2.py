@@ -532,7 +532,7 @@ def main(problem_name: str, n_rooms: int):
 
     guess_map = learner.reconstruct(hyp, n_rooms)
 
-    print(json.dumps(guess_map, indent=2))
+    print(json.dumps(guess_map))
     ok = client.guess(guess_map)
     print("Guess correct?", ok)
 
