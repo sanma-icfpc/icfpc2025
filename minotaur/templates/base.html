@@ -49,9 +49,8 @@
           </div>
         </div>
         <div class="text-sm text-gray-600 flex items-center space-x-2">
-          <span>Connected Agents:</span>
+          <span>🤖</span>
           <span id="agent-count" class="font-mono">0</span>
-          <span>Server Status:</span>
           <span id="sse-status" class="badge badge-offline ml-2">🔴 OFFLINE</span>
           <span class="ml-4">Auto Update</span>
           <button id="auto-toggle" class="auto-switch on" role="switch" aria-checked="true" aria-label="Auto Update" onclick="toggleAutoUpdate()"><span class="knob"></span></button>
@@ -224,42 +223,55 @@
       const prevWinY = window.scrollY || window.pageYOffset || 0;
       captureUIState();
       statusInFlight = true;
-      let url = '/minotaur/status?recent_page=' + encodeURIComponent(recentPage);
-      if (typeof recentFilter === 'string') {
-        url += '&recent_filter=' + encodeURIComponent(recentFilter);
+      const tasks = [];
+      // Running
+      tasks.push(
+        fetch('/minotaur/pane_running', { credentials: 'same-origin' })
+          .then(r => r.text())
+          .then(html => { rPane.innerHTML = html; updateIdenticons(rPane); })
+          .catch(() => {})
+      );
+      // Queued
+      tasks.push(
+        fetch('/minotaur/pane_queued', { credentials: 'same-origin' })
+          .then(r => r.text())
+          .then(html => { qPane.innerHTML = html; updateIdenticons(qPane); })
+          .catch(() => {})
+      );
+      // Recent (optional)
+      if (!skipRecent) {
+        let url = '/minotaur/pane_recent?recent_page=' + encodeURIComponent(recentPage);
+        if (typeof recentFilter === 'string') {
+          url += '&recent_filter=' + encodeURIComponent(recentFilter);
+        }
+        tasks.push(
+          fetch(url, { credentials: 'same-origin' })
+            .then(r => r.text())
+            .then(html => {
+              rcPane.innerHTML = html;
+              updateIdenticons(rcPane);
+              try {
+                const pager = rcPane.querySelector('#recent-pager');
+                if (pager) {
+                  const pg = parseInt(pager.getAttribute('data-page') || `${recentPage}`, 10) || recentPage;
+                  recentPage = pg; // sync with server clamp
+                  setURLParam('recent_page', recentPage);
+                  bindRecentPagerEvents();
+                }
+              } catch (_) {}
+              try { bindRecentFilterEvents(); } catch (_) {}
+            })
+            .catch(() => {})
+        );
       }
-      fetch(url, { credentials: 'same-origin' })
-        .then(r => r.text())
-        .then(html => {
-          const doc = (new DOMParser()).parseFromString(html, 'text/html');
-          const root = doc.getElementById('status');
-          if (!root) return;
-          const secRun = root.querySelector('#section-running');
-          const secQue = root.querySelector('#section-queued');
-          const secRec = root.querySelector('#section-recent');
-          if (secRun) rPane.innerHTML = secRun.outerHTML; else rPane.textContent = '—';
-          if (secQue) qPane.innerHTML = secQue.outerHTML; else qPane.textContent = '—';
-          let updatedRecent = false;
-          if (!skipRecent) {
-            if (secRec) rcPane.innerHTML = secRec.outerHTML; else rcPane.textContent = '—';
-            updatedRecent = true;
-          }
-          updateIdenticons(rPane); updateIdenticons(qPane); if (!skipRecent) updateIdenticons(rcPane);
-          if (updatedRecent) {
-            try {
-              const pager = rcPane.querySelector('#recent-pager');
-              if (pager) {
-                const pg = parseInt(pager.getAttribute('data-page') || `${recentPage}`, 10) || recentPage;
-                recentPage = pg; // sync with server clamp
-                setURLParam('recent_page', recentPage);
-                bindRecentPagerEvents();
-              }
-            } catch (_) {}
-            try { bindRecentFilterEvents(); } catch (_) {}
-          }
-        })
+      Promise.all(tasks)
         .catch(() => {})
-        .finally(() => { statusInFlight = false; [rPane,qPane,rcPane].forEach((el,i)=>{ try{ el.scrollTop = prevScrolls[i]; }catch(_){}}); try { window.scrollTo(0, prevWinY); } catch(_){}; restoreUIState(); updateRelativeTimes(); });
+        .finally(() => {
+          statusInFlight = false;
+          [rPane,qPane,rcPane].forEach((el,i)=>{ try{ el.scrollTop = prevScrolls[i]; }catch(_){}});
+          try { window.scrollTo(0, prevWinY); } catch(_){};
+          restoreUIState(); updateRelativeTimes();
+        });
     }
     function updateAgentCount() {
       fetch('/minotaur/agent_count', { credentials: 'same-origin' })
@@ -348,7 +360,7 @@
       initRecentPageFromURL();
       initRecentFilterFromURL();
       loadStatus();
-      loadPriorities(true);
+      try { if (document.getElementById('priority-pane')) loadPriorities(true); } catch (_) {}
       updateAgentCount();
       setSSEStatus(true);
       updateAutoToggleUI();
@@ -652,27 +664,17 @@
     // Toggle Recent card's Request panel (collapsed by default)
     function toggleRecentRequests(headerEl) {
       try {
-        console.log(1);
         if (!headerEl) return false;
-        console.log(2);
         // Container sits as a sibling with data-recent-requests
         let scope = headerEl.parentElement || null;
-        console.log(3);
         let container = null;
-        console.log(4);
         if (scope) container = scope.querySelector('[data-recent-requests]');
-        console.log(5);
         if (!container) container = headerEl.nextElementSibling;
-        console.log(6);
         if (!container) return false;
-        console.log(7);
         container.classList.toggle('hidden');
-        console.log(8);
         // Update visual caret if present
         const caret = headerEl.querySelector('[data-caret]');
-        console.log(9);
         if (caret) caret.textContent = container.classList.contains('hidden') ? '▸' : '▾';
-        console.log(10);
         return false;
       } catch (_) { return false; }
     }

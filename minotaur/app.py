@@ -19,6 +19,7 @@ from .logging import JsonlLogger
 from .proxy import UpstreamProxy
 from .scheduler import Coordinator
 from .ui_routes import register_ui_routes
+from .ui import register_ui_blueprints
 from .api_routes import register_api_routes
 from .api_select import register_select_routes
 from .priority_routes import register_priority_routes
@@ -137,6 +138,7 @@ def _log_response(resp: Response):
 
 # Register route groups
 ctx = AppCtx(s=s, conn=dbm.ConnProxy(s.db_path), logger=logger, proxy=proxy, coord=coord, ui_guard=_ui_guard, bus=bus)
+register_ui_blueprints(app, ctx)
 register_ui_routes(app, ctx)
 register_select_routes(app, ctx)
 register_api_routes(app, ctx)

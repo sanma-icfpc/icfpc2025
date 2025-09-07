@@ -13,102 +13,7 @@ import platform as _platform
 import sys as _sys
 import time as _time2
 
-
-def _fmt_ts(ts: str) -> str:
-    try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        disp = dt.strftime("%Y/%m/%d %H:%M:%S")
-        delta = datetime.now(timezone.utc) - dt.astimezone(timezone.utc)
-        sec = int(delta.total_seconds())
-        if sec < 60:
-            rel = f"{sec}秒前"
-        elif sec < 3600:
-            rel = f"{sec//60}分前"
-        else:
-            rel = f"{sec//3600}時間前"
-        return f"{disp} ({rel})"
-    except Exception:
-        return ts
-
-
-def _flows(ctx: AppCtx, ch_id: int):
-    rows = ctx.conn.execute(
-        "SELECT api, req_key, phase, status_code, ts, req_body, res_body FROM challenge_requests WHERE challenge_id=? ORDER BY id ASC",
-        (ch_id,),
-    ).fetchall()
-    d: Dict[str, Dict[str, Any]] = {}
-    import json as _json
-    for r in rows:
-        key = r["req_key"] or f"{r['api']}-{r['ts']}"
-        item = d.get(key)
-        if not item:
-            item = {
-                "api": r["api"],
-                "phases": set(),
-                "ts": r["ts"],
-                "codes": {},
-                "req_key": key,
-                "req_pretty": None,
-                "res_pretty": None,
-                "summary": "",
-                "internal": False,
-            }
-            d[key] = item
-        ph = r["phase"]
-        item["phases"].add(ph)
-        if r["api"] == "event":
-            item["internal"] = True
-        try:
-            sc = int(r["status_code"]) if r["status_code"] is not None else 0
-        except Exception:
-            sc = 0
-        item["codes"][ph] = sc
-        if ph in ("agent_in", "to_upstream") and item["req_pretty"] is None:
-            try:
-                obj = _json.loads(r["req_body"]) if r["req_body"] else None
-                item["req_pretty"] = _json.dumps(obj, ensure_ascii=False, indent=2) if obj is not None else (r["req_body"] or "")
-            except Exception:
-                item["req_pretty"] = r["req_body"] or ""
-        if ph in ("from_upstream", "agent_out"):
-            try:
-                obj = _json.loads(r["res_body"]) if r["res_body"] else None
-                item["res_pretty"] = _json.dumps(obj, ensure_ascii=False, indent=2) if obj is not None else (r["res_body"] or "")
-            except Exception:
-                item["res_pretty"] = r["res_body"] or ""
-        try:
-            if r["api"] == "select" and ph == "agent_in" and not item["summary"]:
-                obj = _json.loads(r["req_body"]) if r["req_body"] else {}
-                pn = obj.get("problemName")
-                item["summary"] = f"problem={pn}" if pn else ""
-            elif r["api"] == "explore" and ph == "from_upstream":
-                robj = _json.loads(r["res_body"]) if r["res_body"] else {}
-                results = robj.get("results") or []
-                q = robj.get("queryCount")
-                lens = [len(x) if isinstance(x, list) else 0 for x in results]
-                item["summary"] = f"plans={len(lens)} results={lens} qc={q}"
-            elif r["api"] == "guess" and ph == "from_upstream":
-                robj = _json.loads(r["res_body"]) if r["res_body"] else {}
-                ok = robj.get("correct")
-                req = _json.loads(r["req_body"]) if r["req_body"] else {}
-                m = req.get("map") or {}
-                rooms = m.get("rooms") or []
-                conns = m.get("connections") or []
-                item["summary"] = f"rooms={len(rooms)} conns={len(conns)} correct={ok}"
-            elif r["api"] == "event":
-                # Summarize internal state changes by listing phases
-                try:
-                    evs = sorted(list(item["phases"]))
-                    if evs:
-                        item["summary"] = "state change: " + ", ".join(evs)
-                    else:
-                        item["summary"] = "state change"
-                except Exception:
-                    item["summary"] = "state change"
-        except Exception:
-            pass
-    out = list(d.values())
-    out.sort(key=lambda x: x["ts"])  # oldest first
-    return out
+from .ui.helpers import fmt_ts as _fmt_ts, flows as _flows
 
 
 def register_ui_routes(app, ctx: AppCtx) -> None:
@@ -189,6 +94,80 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             recent_filter=recent_filter,
         )
 
+    @app.route("/minotaur/pane_running")
+    @guard.require()
+    def ui_pane_running():
+        running = ctx.conn.execute(
+            "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        running_flows = _flows(ctx, int(running["id"])) if running else []
+        return render_template(
+            "pane_running.html",
+            running=running,
+            running_flows=running_flows,
+        )
+
+    @app.route("/minotaur/pane_queued")
+    @guard.require()
+    def ui_pane_queued():
+        queued = ctx.conn.execute(
+            "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20"
+        ).fetchall()
+        queued_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in queued}
+        return render_template(
+            "pane_queued.html",
+            queued=queued,
+            queued_flows=queued_flows_map,
+        )
+
+    @app.route("/minotaur/pane_recent")
+    @guard.require()
+    def ui_pane_recent():
+        try:
+            recent_page = int(request.args.get("recent_page", "1") or "1")
+            if recent_page < 1:
+                recent_page = 1
+        except Exception:
+            recent_page = 1
+        recent_filter = (request.args.get("recent_filter", "") or "").strip()
+        page_size = 20
+        offset = (recent_page - 1) * page_size
+        # Count total recent for pagination
+        if recent_filter:
+            recent_total_row = ctx.conn.execute(
+                "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') AND (COALESCE(agent_name,'') LIKE ? OR COALESCE(problem_id,'') LIKE ?)",
+                (f"%{recent_filter}%", f"%{recent_filter}%"),
+            ).fetchone()
+        else:
+            recent_total_row = ctx.conn.execute(
+                "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running')"
+            ).fetchone()
+        recent_total = int(recent_total_row["c"]) if recent_total_row else 0
+        recent_pages = max(1, (recent_total + page_size - 1) // page_size)
+        if recent_page > recent_pages:
+            recent_page = recent_pages
+            offset = (recent_page - 1) * page_size
+        if recent_filter:
+            recent = ctx.conn.execute(
+                "SELECT * FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') AND (COALESCE(agent_name,'') LIKE ? OR COALESCE(problem_id,'') LIKE ?) ORDER BY finished_at DESC LIMIT ? OFFSET ?",
+                (f"%{recent_filter}%", f"%{recent_filter}%", page_size, offset),
+            ).fetchall()
+        else:
+            recent = ctx.conn.execute(
+                "SELECT * FROM challenges WHERE status IN ('correct','incorrect','success','finished_guess','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT ? OFFSET ?",
+                (page_size, offset),
+            ).fetchall()
+        recent_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in recent}
+        return render_template(
+            "pane_recent.html",
+            recent=recent,
+            recent_flows=recent_flows_map,
+            recent_page=recent_page,
+            recent_pages=recent_pages,
+            recent_total=recent_total,
+            recent_filter=recent_filter,
+        )
+
     @app.route("/minotaur/stream")
     @guard.require()
     def ui_stream():
@@ -240,129 +219,15 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             log_dir=ctx.s.log_dir,
         )
 
-    @app.route("/minotaur/download_db")
-    @guard.require()
-    def ui_download_db():
-        """Deliver a consistent SQLite snapshot, even while the server is running.
+    # moved to blueprint: ui.admin_db.create_admin_db_bp
 
-        Uses SQLite backup into a temporary file so WAL contents are included
-        and in-memory databases can be dumped as well. Works on Linux/Windows.
-        """
-        import sqlite3, tempfile, io
-        try:
-            src_path = ctx.s.db_path
-            # Connect to source (use URI for file: or memory URIs)
-            use_uri = src_path.startswith("file:") or ("mode=memory" in src_path) or src_path.startswith("sqlite:")
-            src = sqlite3.connect(src_path, uri=use_uri, check_same_thread=False)
-            # Create temp file and write a consistent backup
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite") as tf:
-                tmp_path = tf.name
-            dst = sqlite3.connect(tmp_path)
-            try:
-                # Fast, consistent copy (includes WAL)
-                src.backup(dst)
-            finally:
-                try:
-                    dst.close()
-                except Exception:
-                    pass
-                try:
-                    src.close()
-                except Exception:
-                    pass
-            # Stream file to client and remove temp file immediately after reading
-            data: bytes
-            with open(tmp_path, "rb") as f:
-                data = f.read()
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
-            bio = io.BytesIO(data)
-            bio.seek(0)
-            return send_file(bio, as_attachment=True, download_name="coordinator.sqlite", mimetype="application/x-sqlite3")
-        except Exception as e:
-            return jsonify({"error": "download_failed", "detail": str(e)}), 500
+    # moved to blueprint: ui.admin_db.create_admin_db_bp
 
-    @app.route("/minotaur/db_info")
-    @guard.require()
-    def ui_db_info():
-        try:
-            dbp = ctx.s.db_path
-            # In-memory (shared) URI
-            if dbp.startswith("file:") and ("mode=memory" in dbp):
-                return jsonify({"in_memory": True}), 200
-            # If it's a file: URI, try extracting the path up to '?'
-            fs_path = dbp
-            if dbp.startswith("file:"):
-                fs_path = dbp[5:]
-                q = fs_path.find('?')
-                if q != -1:
-                    fs_path = fs_path[:q]
-                # Normalize relative paths under package dir
-                if not os.path.isabs(fs_path):
-                    from .config import BASE_DIR
-                    fs_path = os.path.join(BASE_DIR, fs_path)
-            if not os.path.isfile(fs_path):
-                return jsonify({"error": "not_found"}), 404
-            # Sum main db + WAL/SHM if present (WAL mode stores most data in -wal)
-            size_bytes = 0
-            try:
-                size_bytes += os.path.getsize(fs_path)
-            except Exception:
-                pass
-            wal = fs_path + "-wal"
-            shm = fs_path + "-shm"
-            try:
-                if os.path.isfile(wal):
-                    size_bytes += os.path.getsize(wal)
-            except Exception:
-                pass
-            try:
-                if os.path.isfile(shm):
-                    size_bytes += os.path.getsize(shm)
-            except Exception:
-                pass
-            size_mb = round(size_bytes / (1024 * 1024), 1)
-            try:
-                mtime = os.path.getmtime(fs_path)
-            except Exception:
-                mtime = None
-            return jsonify({
-                "path": fs_path,
-                "sizeBytes": int(size_bytes),
-                "sizeMB": float(size_mb),
-                "mtime": mtime,
-            })
-        except Exception:
-            return jsonify({"error": "stat_failed"}), 500
+    # moved to blueprint: ui.admin_db.create_admin_db_bp
 
-    @app.route("/minotaur/db_close_conns", methods=["POST"])
-    @guard.require()
-    def ui_db_close_conns():
-        try:
-            stats = dbm.close_all_connections()
-            # Nudge coordinator/scheduler in case it holds a stale conn and to trigger UI refresh
-            try:
-                if ctx.coord and ctx.coord.on_change:
-                    ctx.coord.on_change("db_close_conns")
-            except Exception:
-                pass
-            return jsonify({"ok": True, **stats})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
+    # moved to blueprint: ui.admin_db.create_admin_db_bp
 
-    @app.route("/minotaur/db_conn_stats")
-    @guard.require()
-    def ui_db_conn_stats():
-        try:
-            st = dbm.conn_stats()
-            return jsonify({"ok": True, **st})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/minotaur/fd_info")
-    @guard.require()
+    # moved to blueprint: ui.admin_sys.create_admin_sys_bp
     def ui_fd_info():
         try:
             plat = (_platform.system() or "").lower()
@@ -460,8 +325,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             return jsonify({"error": "fd_info_failed"}), 500
 
-    @app.route("/minotaur/mem_info")
-    @guard.require()
+    # moved to blueprint: ui.admin_sys.create_admin_sys_bp
     def ui_mem_info():
         """Basic process memory stats for debugging RSS growth.
 
@@ -529,8 +393,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             pass
         return jsonify(info)
 
-    @app.route("/minotaur/mem_objects")
-    @guard.require()
+    # moved to blueprint: ui.admin_sys.create_admin_sys_bp
     def ui_mem_objects():
         """Summarize GC-tracked Python objects by type.
 
@@ -579,8 +442,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             out["elapsedMs"] = int(((_t.perf_counter() - t0) * 1000.0))
         return jsonify(out)
 
-    @app.route("/minotaur/gc_collect", methods=["POST"])
-    @guard.require()
+    # moved to blueprint: ui.admin_sys.create_admin_sys_bp
     def ui_gc_collect():
         import gc as _gc
         try:
@@ -648,6 +510,56 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                 "n_incorrect": int(r["n_incorrect"] or 0),
             }
         return render_template("analytics.html", problems=probs, agents=agents, metrics=metrics)
+
+    @app.route("/minotaur/pane_analytics")
+    @guard.require()
+    def ui_pane_analytics():
+        # Same data as /minotaur/analytics but render pane_analytics.html
+        probs = [r["problem_id"] for r in ctx.conn.execute(
+            "SELECT DISTINCT problem_id FROM challenges WHERE problem_id IS NOT NULL ORDER BY problem_id"
+        ).fetchall()]
+        agents_raw = ctx.conn.execute(
+            "SELECT DISTINCT agent_name FROM challenges ORDER BY agent_name"
+        ).fetchall()
+        agents = []
+        has_null = False
+        for r in agents_raw:
+            nm = r["agent_name"]
+            if nm is None:
+                has_null = True
+            else:
+                agents.append(nm)
+        if has_null:
+            agents.append("-")
+        q = (
+            "SELECT agent_name, problem_id, "
+            "AVG(CASE WHEN status IN ('correct','success') THEN score_query_count END) AS mean_qc, "
+            "MIN(CASE WHEN status IN ('correct','success') THEN score_query_count END) AS min_qc, "
+            "SUM(CASE WHEN status IN ('correct','success') THEN 1 ELSE 0 END) AS n_correct, "
+            "SUM(CASE WHEN status IN ('incorrect','finished_guess') THEN 1 ELSE 0 END) AS n_incorrect "
+            "FROM challenges GROUP BY agent_name, problem_id"
+        )
+        metrics = {}
+        for r in ctx.conn.execute(q).fetchall():
+            an = r["agent_name"] if r["agent_name"] is not None else "-"
+            pid = r["problem_id"]
+            metrics[(an, pid)] = {
+                "mean_qc": r["mean_qc"],
+                "min_qc": r["min_qc"],
+                "n_correct": int(r["n_correct"] or 0),
+                "n_incorrect": int(r["n_incorrect"] or 0),
+            }
+        return render_template("pane_analytics.html", problems=probs, agents=agents, metrics=metrics)
+
+    @app.route("/minotaur/pane_admin")
+    @guard.require()
+    def ui_pane_admin():
+        return render_template("pane_admin.html")
+
+    @app.route("/minotaur/pane_scheduler")
+    @guard.require()
+    def ui_pane_scheduler():
+        return render_template("pane_scheduler.html")
 
     @app.route("/minotaur/agent_count")
     @guard.require()
@@ -790,8 +702,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             recent_flows=recent_flows_map,
         )
 
-    @app.route("/minotaur/shutdown", methods=["POST"])
-    @guard.require()
+    # moved to blueprint: ui.admin_sys.create_admin_sys_bp
     def ui_shutdown():
         def _killer():
             try:
@@ -802,8 +713,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         threading.Thread(target=_killer, daemon=True).start()
         return jsonify({"ok": True})
 
-    @app.route("/minotaur/threads_os")
-    @guard.require()
+    # moved to blueprint: ui.admin_threads.create_admin_threads_bp
     def ui_threads_os():
         pid = os.getpid()
         plat = (_platform.system() or "").lower()

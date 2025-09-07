@@ -15,7 +15,7 @@
 
   <!-- Scheduler Tab -->
   <div id="tab-scheduler">
-    <div id="priority-pane" class="mb-4">Loading priorities…</div>
+    <div id="scheduler-pane">Loading scheduler…</div>
   </div>
 
   <!-- Running Agents Tab -->
@@ -106,6 +106,8 @@
 <script>
   let analyticsLoaded = false;
   let analyticsInFlight = false;
+  let schedulerLoaded = false;
+  let adminLoaded = false;
   function updateURLTab(name) {
     const url = new URL(window.location.href);
     url.searchParams.set('tab', name);
@@ -148,18 +150,20 @@
     } else if (name === 'admin') {
       hide(running); hide(queued); hide(recent); hide(scheduler); hide(analytics); show(admin);
       setActiveBtn('tabbtn-admin');
+      if (!adminLoaded) loadAdminPane();
       // Refresh DB info when entering Admin
       refreshDBInfoIfVisible();
     } else { // default scheduler
       hide(running); hide(queued); hide(recent); hide(analytics); hide(admin); show(scheduler);
       setActiveBtn('tabbtn-scheduler');
+      if (!schedulerLoaded) loadSchedulerPane();
     }
     updateURLTab(name);
   }
   function loadAnalytics() {
     if (analyticsInFlight) return;
     analyticsInFlight = true;
-    fetch('/minotaur/analytics', { credentials: 'same-origin' })
+    fetch('/minotaur/pane_analytics', { credentials: 'same-origin' })
       .then(r => r.text())
       .then(html => {
         const el = document.getElementById('analytics-pane');
@@ -168,6 +172,35 @@
       })
       .catch(() => {})
       .finally(() => { analyticsInFlight = false; });
+  }
+
+  function loadSchedulerPane() {
+    const el = document.getElementById('tab-scheduler');
+    if (!el) return;
+    fetch('/minotaur/pane_scheduler', { credentials: 'same-origin' })
+      .then(r => r.text())
+      .then(html => {
+        el.innerHTML = html;
+        schedulerLoaded = true;
+        try { loadPriorities(true); } catch (_) {}
+        try { updateIdenticons(el); } catch (_) {}
+      })
+      .catch(() => {});
+  }
+
+  function loadAdminPane() {
+    const el = document.getElementById('tab-admin');
+    if (!el) return;
+    fetch('/minotaur/pane_admin', { credentials: 'same-origin' })
+      .then(r => r.text())
+      .then(html => {
+        el.innerHTML = html;
+        adminLoaded = true;
+        try { refreshDBInfoIfVisible(); } catch (_) {}
+        try { refreshThreadsIfVisible(); } catch (_) {}
+        try { refreshMemInfoIfVisible(); } catch (_) {}
+      })
+      .catch(() => {});
   }
 
   function refreshAnalyticsIfVisible() {
@@ -406,6 +439,7 @@
   document.addEventListener('DOMContentLoaded', function() {
     const tab = getURLTab() || 'scheduler';
     switchTab(tab);
+    if (tab === 'scheduler' && !schedulerLoaded) { loadSchedulerPane(); }
     // Preload DB info if Admin is the initial tab
     refreshDBInfoIfVisible();
     refreshThreadsIfVisible();
