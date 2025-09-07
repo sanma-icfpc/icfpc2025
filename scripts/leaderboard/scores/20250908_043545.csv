@@ -1,0 +1,347 @@
+timestamp,rank,teamName,teamPl,score
+20250908_043545,1,Unagi,Rust,4924
+20250908_043545,2,Purely Functional Networks,C++,4924
+20250908_043545,3,omnes tuus liber sunt pertinere ad nos,OCaml and/or C++,4920
+20250908_043545,4,MOYOU,Rust,4916
+20250908_043545,5,Spacecat,Rust,4892
+20250908_043545,6,Fixstars,"C++,Python",4886
+20250908_043545,7,Gon The Fox,Rust,4864
+20250908_043545,8,qedfew,"Haskell, Python, Rust",4842
+20250908_043545,9,Piggyheck,"Rust, Python",4829
+20250908_043545,10,Turing Machinists,[REDACTED],4814
+20250908_043545,11,DIgital Experts,Rust,4813
+20250908_043545,12,manarimo,Go,4801
+20250908_043545,13,House of Lambdas,python,4792
+20250908_043545,14,Pegovka,C#,4790
+20250908_043545,15,neoアミューズメントスペースa-cho,Rust,4759
+20250908_043545,16,chirijako,"Rust,C++,Python",4758
+20250908_043545,17,Pigimarl,Rust/Python/C++/TypeScript,4710
+20250908_043545,18,Yorofuwa,Go,4700
+20250908_043545,19,Highlanders,python,4683
+20250908_043545,20,negainoido,Rust,4649
+20250908_043545,21,The Higher Order of Zeuxis,Python,4578
+20250908_043545,22,ARechitsky,Python,4549
+20250908_043545,23,SEK,Python,4439
+20250908_043545,24,Blue Iris,"Jules, Python, maybe Rust",4426
+20250908_043545,25,idkjava,Anything but Java,4416
+20250908_043545,26,IKS,"Python, C++",4384
+20250908_043545,27,Heuristic Artis,Rust,4220
+20250908_043545,28,WILD BASHKORT MAGES,日本語,4099
+20250908_043545,29,Theoretical Hypothetical Infinite Recursive Definitions,C++,3874
+20250908_043545,30,powder,Haskell,3834
+20250908_043545,31,TBD,rusty,3685
+20250908_043545,32,Lambda Quakens,Swift,3651
+20250908_043545,33,kumanomi,"Rust,C++",3495
+20250908_043545,34,Ty chyo pyos? 3.11,Rust,3399
+20250908_043545,35,cashto,python,3315
+20250908_043545,36,sanma,C++,3243
+20250908_043545,37,V8,[object Object],3211
+20250908_043545,38,"Snakes, Monkeys, and Two Smoking Lambdas",Python,2478
+20250908_043545,39,A,P,2184
+20250908_043545,40,traP,"C++, Rust",2132
+20250908_043545,41,sonna*baka*na,C++,1842
+20250908_043545,42,ichyo,Rust,1697
+20250908_043545,43,Bue World,Rust,1513
+20250908_043545,44,Frictionless Bananas,C++,1513
+20250908_043545,45,xyz600,Rust,1505
+20250908_043545,46,jabber.ru,OCaml,1505
+20250908_043545,47,The Blind Hen,OCaml,1500
+20250908_043545,48,Tambourine head,OCaml,1490
+20250908_043545,49,The Cat is #1!!,"C#, Python",1473
+20250908_043545,50,Raging Mushrooms Team,lisp-ish with a touch of R’lyeh,1465
+20250908_043545,51,ImportLibrary,"python, ocaml",1465
+20250908_043545,52,------- PRIZE CUTOFF -------,scheme,1461
+20250908_043545,53,code-o-matic,"Java, Python",1458
+20250908_043545,54,hikkash,Rust,1457
+20250908_043545,55,Olympia,"C#,python",1456
+20250908_043545,56,locally constant,Python,1452
+20250908_043545,57,LILIK UniFi,"Rust, Python-C++, Pascal",1428
+20250908_043545,58,Team 50+,"C++, Java, Python",1428
+20250908_043545,59,Channable & Friends,Rust,1425
+20250908_043545,60,Dare Ludum,Rust,1417
+20250908_043545,61,Human Instrumentality Project,C#,1413
+20250908_043545,62,A Storm of Minds,"lisp, python, java",1402
+20250908_043545,63,CTO,Typescript,1401
+20250908_043545,64,igusarov,C++,1390
+20250908_043545,65,Jimmy C#,C#,1390
+20250908_043545,66,Zebra Infused Hamsters,Everything except LUA,1389
+20250908_043545,67,SjoerdVisscher,Haskell,1379
+20250908_043545,68,Team Sampou,Haskell,1361
+20250908_043545,69,DnDn,DnDn,1358
+20250908_043545,70,killswitch,"Python,OCaml",1354
+20250908_043545,71,taxidriver,Ruby,1346
+20250908_043545,72,shim0,"Python, Rust",1342
+20250908_043545,73,uguu.org,C++,1316
+20250908_043545,74,M＆M's,Python,1306
+20250908_043545,75,tarstars,python,1303
+20250908_043545,76,Solo,Python,1301
+20250908_043545,77,THIRTEEN,"go,kotlin,java,rust",1301
+20250908_043545,78,Dis Functional,Go,1300
+20250908_043545,79,DK,Python/C++,1290
+20250908_043545,80,i_havent_touched_coding_in_3_months,rust,1266
+20250908_043545,81,ootbo,"python, etc",1266
+20250908_043545,82,Team Meh,C#,1266
+20250908_043545,83,OpenMaster,"ruby,python",1257
+20250908_043545,84,LucasKiwi,python,1238
+20250908_043545,85,C4T BuT S4D,C+++Python,1180
+20250908_043545,86,Bottle kids!,Julia,1171
+20250908_043545,87,TSG,OCaml,1166
+20250908_043545,88,std::round_tensor(),Lightning,1013
+20250908_043545,89,order of the curried llambda,animism,859
+20250908_043545,90,Begot,C/C++,859
+20250908_043545,91,Maximum,"Rust,C++",859
+20250908_043545,92,tomerun,Crystal,859
+20250908_043545,93,capybara_lovers,"c++,OCaml",859
+20250908_043545,94,RGBTeam,"Rust, C++, Python",853
+20250908_043545,95,Andrei,py,851
+20250908_043545,96,DFT,Python & Rust,805
+20250908_043545,97,test-gorillus,zig,772
+20250908_043545,98,NCPLUG,mainly Haskell,554
+20250908_043545,99,rinsakamichi.github.io,C++,554
+20250908_043545,100,eulerscheZahl,C#,554
+20250908_043545,101,DiamondPrincess,"Haxe, Perl, C++",554
+20250908_043545,102,Sunspear,C++,554
+20250908_043545,103,lonesome chipmunk,ocaml,553
+20250908_043545,104,testing_library,Java,552
+20250908_043545,105,yupiteru,C#,543
+20250908_043545,106,test-team,python,538
+20250908_043545,107,Cult of the Bound Variable,[REDACTED],537
+20250908_043545,108,hayato,Rust,521
+20250908_043545,109,s1mahoeg,python,472
+20250908_043545,110,A,P,302
+20250908_043545,111,squadra,python,264
+20250908_043545,112,foobar111,Rust,264
+20250908_043545,113,yowa,"C++,Ruby",264
+20250908_043545,114,ngitmikami,Rust,264
+20250908_043545,115,oglraz,Matlab,264
+20250908_043545,116,Yahoo knows him,python,264
+20250908_043545,117,Sigurd,Prolog,264
+20250908_043545,118,The Blasters,Javascript,264
+20250908_043545,119,undercut,"Kotlin, Python, Rust",264
+20250908_043545,120,ink,python,260
+20250908_043545,121,友人,dysfunctional programming language,260
+20250908_043545,122,Sometimes but not always,Python,257
+20250908_043545,123,self.atari,"Python, TS/JS, &c.",257
+20250908_043545,124,frank324,C++,256
+20250908_043545,125,potato fry,Rust,251
+20250908_043545,126,lambdametal,"Scheme,C",243
+20250908_043545,127,botrevenge,C++,241
+20250908_043545,128,Ivan Zolo,c++,240
+20250908_043545,129,zfhrp,Python,237
+20250908_043545,130,λbubu,"Python,Rust",234
+20250908_043545,131,NIBOJI Fan Club,C++,221
+20250908_043545,132,TeaCup,Python,217
+20250908_043545,133,A,P,0
+20250908_043545,134,gzo,c++,0
+20250908_043545,135,balonit_bros,c++,0
+20250908_043545,136,Lutvuk,Haskell,0
+20250908_043545,137,x14ngch3n,Python,0
+20250908_043545,138,monocolore,python,0
+20250908_043545,139,Piggyheck,"Rust, Python",0
+20250908_043545,140,Foundation Coding,Clojure,0
+20250908_043545,141,gzo,c++,0
+20250908_043545,142,LucasKiwi,python,0
+20250908_043545,143,PKLPO LLC,TypeScript,0
+20250908_043545,144,hiro116s,Rust,0
+20250908_043545,145,LucasKiwi,python,0
+20250908_043545,146,gzo,c++,0
+20250908_043545,147,Lev,C++,0
+20250908_043545,148,R22b,"Python, C++, bash",0
+20250908_043545,149,foobar111,Rust,0
+20250908_043545,150,BonegaAmbalabu,Python,0
+20250908_043545,151,Frederick Pringle,Haskell and Python,0
+20250908_043545,152,Sandman,C#,0
+20250908_043545,153,Rise A Bone,Python,0
+20250908_043545,154,gzo,c++,0
+20250908_043545,155,IO IO It's Off to Work We Go,Rust,0
+20250908_043545,156,Daniil Sobol,Elixir,0
+20250908_043545,157,Your Team Name,Python,0
+20250908_043545,158,test,,0
+20250908_043545,159,David Bell,go,0
+20250908_043545,160,test-team,python,0
+20250908_043545,161,Odd Taxi,Python,0
+20250908_043545,162,undercut,"Kotlin, Python, Rust",0
+20250908_043545,163,Llamabitets,"QVICKBASIC (version VII.0 with Rust, Python, & Go Extensions)",0
+20250908_043545,164,Test Team,Python,0
+20250908_043545,165,wheezards,Python,0
+20250908_043545,166,LucasKiwi,python,0
+20250908_043545,167,gzo,c++,0
+20250908_043545,168,aaaa,c++,0
+20250908_043545,169,foobar111,Rust,0
+20250908_043545,170,igusarov,C++,0
+20250908_043545,171,bellazio,boh,0
+20250908_043545,172,gzo,c++,0
+20250908_043545,173,hoelzro,python,0
+20250908_043545,174,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,175,cup<t>,copilot,0
+20250908_043545,176,test_user,Python,0
+20250908_043545,177,CupOfT,copilot,0
+20250908_043545,178,gzo,c++,0
+20250908_043545,179,wheezards,Python,0
+20250908_043545,180,space-invaider,cpp,0
+20250908_043545,181,sdb-mapinator,Python,0
+20250908_043545,182,noname,?,0
+20250908_043545,183,NIBOJI Fan Club,C++,0
+20250908_043545,184,YubiYubi,Python,0
+20250908_043545,185,testteam001,Python,0
+20250908_043545,186,arba,coconut,0
+20250908_043545,187,*uni*,Go,0
+20250908_043545,188,sh,~,0
+20250908_043545,189,Begot,C/C++,0
+20250908_043545,190,gzo,c++,0
+20250908_043545,191,Piggyheck,"Rust, Python",0
+20250908_043545,192,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,193,the mechanicals,Lean,0
+20250908_043545,194,Tourists,Python,0
+20250908_043545,195,alpha_bootis_test,pen_and_paper,0
+20250908_043545,196,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,197,test,,0
+20250908_043545,198,Little Zebra,C++,0
+20250908_043545,199,n0bml,c++,0
+20250908_043545,200,Bears Ate Our Brains,c++,0
+20250908_043545,201,TeaCup,Python,0
+20250908_043545,202,space-invaider,cpp,0
+20250908_043545,203,rinsakamichi.github.io,C++,0
+20250908_043545,204,AnonSolver,Python3,0
+20250908_043545,205,sanityinc,ocaml,0
+20250908_043545,206,aaaa,c++,0
+20250908_043545,207,ilikerice,2,0
+20250908_043545,208,space-invaider,cpp,0
+20250908_043545,209,yupiteru,C#,0
+20250908_043545,210,gzo,c++,0
+20250908_043545,211,icfpc fan,brain,0
+20250908_043545,212,edoput,DFA,0
+20250908_043545,213,Jolly Roger,Java,0
+20250908_043545,214,hirulez,golang,0
+20250908_043545,215,space-invaider,cpp,0
+20250908_043545,216,Rise A Bone,Python,0
+20250908_043545,217,gionimbus,c++,0
+20250908_043545,218,space-invaider,cpp,0
+20250908_043545,219,pacome.f,python,0
+20250908_043545,220,heklers,Python,0
+20250908_043545,221,jus7-a-V01D,Rust and only Rust,0
+20250908_043545,222,test_user,Python,0
+20250908_043545,223,seiyakyokai,"C++,JavaScript",0
+20250908_043545,224,testteam002,Python,0
+20250908_043545,225,monocolore,python,0
+20250908_043545,226,gzo,c++,0
+20250908_043545,227,test_user,Python,0
+20250908_043545,228,LucasKiwi,python,0
+20250908_043545,229,toomer,Rust,0
+20250908_043545,230,rinsakamichi.github.io,C++,0
+20250908_043545,231,meow-meow,meow,0
+20250908_043545,232,gzo,c++,0
+20250908_043545,233,mojaaa-test,rust,0
+20250908_043545,234,Your Team Name,TypeScript,0
+20250908_043545,235,gzo,c++,0
+20250908_043545,236,A,P,0
+20250908_043545,237,hemisphere,clean,0
+20250908_043545,238,SdS_test,Python,0
+20250908_043545,239,AnonSolver,Python3,0
+20250908_043545,240,Leg of Lambda,Python,0
+20250908_043545,241,NetworkNinjas,"C++, Rust, Go",0
+20250908_043545,242,Nadir,Javascript,0
+20250908_043545,243,monocolore,python,0
+20250908_043545,244,Team Sampou,Haskell,0
+20250908_043545,245,testXXXX1111,go,0
+20250908_043545,246,code-o-matic,"Java, Python",0
+20250908_043545,247,gzo,c++,0
+20250908_043545,248,UnlikelyToSucceed,Ruby,0
+20250908_043545,249,DK,Python/C++,0
+20250908_043545,250,ARechitsky,Python,0
+20250908_043545,251,monocolore,python,0
+20250908_043545,252,Junk Food,Haskell,0
+20250908_043545,253,Perhyte,Go,0
+20250908_043545,254,pandb,tbd,0
+20250908_043545,255,DNIWE :: a,"vuvko,abbradar",0
+20250908_043545,256,shinh,ruby,0
+20250908_043545,257,skermes,python,0
+20250908_043545,258,poka,Rust,0
+20250908_043545,259,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,260,cashto,python,0
+20250908_043545,261,space-invaider,cpp,0
+20250908_043545,262,LucasKiwi,python,0
+20250908_043545,263,LucasKiwi,python,0
+20250908_043545,264,test-mod,bash,0
+20250908_043545,265,Comitative case,Kotlin,0
+20250908_043545,266,UA_paiv,paiv,0
+20250908_043545,267,papier,Go,0
+20250908_043545,268,gzo,c++,0
+20250908_043545,269,LucasKiwi,python,0
+20250908_043545,270,sk,python,0
+20250908_043545,271,Task Manager (Not Responding),Swift,0
+20250908_043545,272,NetworkNinjas,"C++, Rust, Go",0
+20250908_043545,273,Billy Milligan,Python,0
+20250908_043545,274,tipstar0125,Rust,0
+20250908_043545,275,Isaac Clarke,SWI Prolog,0
+20250908_043545,276,marnix,Python,0
+20250908_043545,277,Highlanders,python,0
+20250908_043545,278,parallaxion,Rust,0
+20250908_043545,279,potatoPotato,python,0
+20250908_043545,280,Wile E,3D,0
+20250908_043545,281,Perhyte,Go,0
+20250908_043545,282,killswitch,"Python,OCaml",0
+20250908_043545,283,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,284,Slow,Go,0
+20250908_043545,285,gzo,c++,0
+20250908_043545,286,undecidable,OCaml,0
+20250908_043545,287,microrack,python,0
+20250908_043545,288,DNIWE :: a,python,0
+20250908_043545,289,FunctorFans,Python,0
+20250908_043545,290,toomer,Rust,0
+20250908_043545,291,Viator Nocturnus,python,0
+20250908_043545,292,SKY,"Python, C++",0
+20250908_043545,293,HamsterBacke,Java,0
+20250908_043545,294,FIRQ,C/C++,0
+20250908_043545,295,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,296,Prolog,go,0
+20250908_043545,297,SdS_test,Python,0
+20250908_043545,298,artem,"c++, python",0
+20250908_043545,299,team_zero,java,0
+20250908_043545,300,semaphores,C,0
+20250908_043545,301,gzo,c++,0
+20250908_043545,302,AnonSolver,Python3,0
+20250908_043545,303,gzo,c++,0
+20250908_043545,304,YourTeamName,C++,0
+20250908_043545,305,Ralf,Scala,0
+20250908_043545,306,capybara_lovers,3,0
+20250908_043545,307,LazyDFA,Python,0
+20250908_043545,308,mλgo,Haskell,0
+20250908_043545,309,LucasKiwi,python,0
+20250908_043545,310,NoduleProgrammers,Haskell,0
+20250908_043545,311,AnonSolver,Python3,0
+20250908_043545,312,decoders,Javascript,0
+20250908_043545,313,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,314,x14ngch3n,Python,0
+20250908_043545,315,SergiuTeam,C++,0
+20250908_043545,316,codingteam,"Scala, Fortran",0
+20250908_043545,317,phantomancy,Julia,0
+20250908_043545,318,hmm,clay tablets,0
+20250908_043545,319,Slytherin,Python,0
+20250908_043545,320,bibliotheca dynamice iuncta,Rust,0
+20250908_043545,321,A,P,0
+20250908_043545,322,popofpop,Chennai,0
+20250908_043545,323,mnuyav,C#,0
+20250908_043545,324,rado,TypeScript,0
+20250908_043545,325,Test Team,Python,0
+20250908_043545,326,gzo,c++,0
+20250908_043545,327,rinsakamichi.github.io,C++,0
+20250908_043545,328,bartwe,c#,0
+20250908_043545,329,Tired Engineer,Python,0
+20250908_043545,330,gzo,c++,0
+20250908_043545,331,semaphores,SumedhGirish,0
+20250908_043545,332,A,P,0
+20250908_043545,333,Team Foo,C++,0
+20250908_043545,334,nullie,rust,0
+20250908_043545,335,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,336,x14ngch3n,python,0
+20250908_043545,337,Rise A Bone,Python,0
+20250908_043545,338,------- PRIZE CUTOFF -------,scheme,0
+20250908_043545,339,TestTeamForDocs,Rust,0
+20250908_043545,340,gzo,c++,0
+20250908_043545,341,tarstars,python,0
+20250908_043545,342,ImportLibrary,"python, ocaml",0
+20250908_043545,343,your_team_name,your_pl_value,0
+20250908_043545,344,dizzy,WhiteSpace,0
+20250908_043545,345,codermal,Go,0
+20250908_043545,346,gzo,c++,0
