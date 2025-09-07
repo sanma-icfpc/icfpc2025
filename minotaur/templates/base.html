@@ -17,6 +17,10 @@
     .badge-success { background:#dcfce7; color:#166534; }
     .badge-timeout { background:#fee2e2; color:#991b1b; }
     .badge-giveup { background:#f3e8ff; color:#6b21a8; }
+    /* Give cancelled a distinct amber tone */
+    .badge-cancelled { background:#ffedd5; color:#9a3412; }
+    .badge-cancelled_queue { background:#ffedd5; color:#9a3412; }
+    .badge-terminated_running { background:#fee2e2; color:#7f1d1d; }
     .badge-error { background:#ffe4e6; color:#9f1239; }
     .badge-interrupted { background:#e5e7eb; color:#374151; }
     .badge-inactive { background:#f3f4f6; color:#6b7280; }
@@ -339,6 +343,18 @@
       fetch('/minotaur/shutdown', { method: 'POST', credentials: 'same-origin' })
         .then(() => { /* server will exit shortly */ })
         .catch(() => {});
+      return false;
+    }
+    function cancelQueued(ticket) {
+      if (!ticket) return false;
+      if (!confirm('Cancel this queued trial?')) return false;
+      fetch('/minotaur/cancel_queued', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket }),
+        credentials: 'same-origin'
+      }).then(() => { loadStatus(); refreshPriorityStatuses(); })
+        .catch(() => { loadStatus(); refreshPriorityStatuses(); });
       return false;
     }
     function downloadDB() {

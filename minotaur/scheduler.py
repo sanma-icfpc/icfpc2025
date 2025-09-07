@@ -60,17 +60,49 @@ class Coordinator:
             run = dbm.query_one(self.conn, "SELECT id FROM challenges WHERE status='running' LIMIT 1")
             if run is not None:
                 return
+            did_cancel_any = False
+            def _next_queued_for_name(name: Optional[str]):
+                # Fetch earliest queued row for agent name (or anonymous '*'), skipping ones marked by cancel_queued event.
+                while True:
+                    if name == '*':
+                        rr = dbm.query_one(
+                            self.conn,
+                            "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name IS NULL ORDER BY enqueued_at ASC LIMIT 1",
+                        )
+                    else:
+                        rr = dbm.query_one(
+                            self.conn,
+                            "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
+                            (name,),
+                        )
+                    if rr is None:
+                        return None
+                    # Skip if a queued-cancel event exists for this challenge; convert it to cancelled now
+                    canc = dbm.query_one(
+                        self.conn,
+                        "SELECT 1 FROM challenge_requests WHERE challenge_id=? AND api='event' AND req_key='cancel_queued' LIMIT 1",
+                        (int(rr["id"]),),
+                    )
+                    if canc is not None:
+                        try:
+                            self.conn.execute(
+                                "UPDATE challenges SET status='cancelled_queue', finished_at=? WHERE id=? AND status='queued'",
+                                (utcnow_str(), int(rr["id"])),
+                            )
+                        except Exception:
+                            pass
+                        nonlocal did_cancel_any
+                        did_cancel_any = True
+                        # Loop and try next queued row
+                        continue
+                    return rr
             # Pinned override
             pin_name, pin_one_shot = pick_pinned(self.conn)
             chosen_name: Optional[str] = None
             chosen_id: Optional[int] = None
             chosen_ticket: Optional[str] = None
             if pin_name:
-                r = dbm.query_one(
-                    self.conn,
-                    "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
-                    (pin_name,),
-                )
+                r = _next_queued_for_name(pin_name)
                 if r is not None:
                     chosen_name = pin_name
                     chosen_id = int(r["id"])
@@ -95,11 +127,7 @@ class Coordinator:
                             "SELECT name FROM agent_priorities WHERE pinned=1 LIMIT 1",
                         )
                         if r2 and r2["name"]:
-                            rr = dbm.query_one(
-                                self.conn,
-                                "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
-                                (r2["name"],),
-                            )
+                            rr = _next_queued_for_name(r2["name"])
                             if rr is not None:
                                 chosen_name = r2["name"]
                                 chosen_id = int(rr["id"])
@@ -177,18 +205,8 @@ class Coordinator:
                 candidates.sort(key=lambda x: (x["vtime"], x["first_enq"]))
                 pick = candidates[0]
                 chosen_name = pick["name"]
-                # Grant earliest enqueued for that agent
-                if chosen_name == '*':
-                    rr = dbm.query_one(
-                        self.conn,
-                        "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name IS NULL ORDER BY enqueued_at ASC LIMIT 1",
-                    )
-                else:
-                    rr = dbm.query_one(
-                        self.conn,
-                        "SELECT id, ticket FROM challenges WHERE status='queued' AND agent_name=? ORDER BY enqueued_at ASC LIMIT 1",
-                        (chosen_name,),
-                    )
+                # Grant earliest enqueued for that agent, skipping cancel_queued-marked rows
+                rr = _next_queued_for_name(chosen_name)
                 if rr is None:
                     return
                 chosen_id = int(rr["id"])
@@ -234,9 +252,9 @@ class Coordinator:
                         })
                     except Exception:
                         pass
-        if emitted and self.on_change:
+        if (emitted or did_cancel_any) and self.on_change:
             try:
-                self.on_change(emitted)
+                self.on_change(emitted or "cancel_queued")
             except Exception:
                 pass
 

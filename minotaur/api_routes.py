@@ -111,7 +111,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
                 except Exception:
                     pass
                 ctx.conn.execute(
-                    "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
+                    "UPDATE challenges SET status='terminated_running', finished_at=? WHERE id=? AND status='running'",
                     (now, int(cur["id"])),
                 )
                 cancelled = True

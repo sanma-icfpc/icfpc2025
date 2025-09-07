@@ -20,7 +20,7 @@
         <span class="ml-4 text-gray-500">ticket:</span> <code>{{ running.ticket }}</code>
       </div>
       <div class="mt-3">
-        <button class="px-3 py-1 bg-red-600 text-white rounded" onclick="cancelRunning(event)">キャンセル</button>
+        <button class="px-3 py-1 bg-red-600 text-white rounded" onclick="cancelRunning(event)">Terminate</button>
       </div>
       <div class="mt-3">
         <h4 class="font-semibold text-sm mb-1">Requests</h4>
@@ -87,7 +87,9 @@
               <span class="ml-3 text-gray-500">prio:</span>
               <span class="font-mono text-xs">{{ t.effective_priority }}</span>
             </div>
-            <div class="text-xs text-gray-600"></div>
+            <div class="text-xs text-gray-600">
+              <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="cancelQueued('{{ t.ticket }}'); return false;">Cancel</button>
+            </div>
           </div>
           <div class="mt-1 text-xs text-gray-600">
             <span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}

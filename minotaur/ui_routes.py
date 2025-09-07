@@ -7,6 +7,7 @@ from flask import Response, jsonify, make_response, render_template, request, st
 
 from .context import AppCtx
 from .sched_fair import accumulate_service
+from . import db as dbm
 import threading, os, time as _time
 import platform as _platform
 import sys as _sys
@@ -129,7 +130,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         ).fetchall()
         # Count total recent for pagination
         recent_total_row = ctx.conn.execute(
-            "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted')"
+            "SELECT COUNT(1) AS c FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running')"
         ).fetchone()
         recent_total = int(recent_total_row["c"]) if recent_total_row else 0
         recent_pages = max(1, (recent_total + page_size - 1) // page_size)
@@ -137,7 +138,7 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             recent_page = recent_pages
             offset = (recent_page - 1) * page_size
         recent = ctx.conn.execute(
-            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted') ORDER BY finished_at DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT ? OFFSET ?",
             (page_size, offset),
         ).fetchall()
         running_flows = _flows(ctx, int(running["id"])) if running else []
@@ -304,12 +305,17 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                     (int(cur["id"]), "event", "cancel", "cancel", 0, "{}", "{}", now),
                 )
             ctx.conn.execute(
-                "UPDATE challenges SET status='giveup', finished_at=? WHERE status='running'",
+                "UPDATE challenges SET status='terminated_running', finished_at=? WHERE status='running'",
                 (now,),
             )
         try:
             if cur is not None:
                 accumulate_service(ctx.conn, ctx.logger, ctx.s.base_priority_default, cur["agent_name"], cur["started_at"], now)
+        except Exception:
+            pass
+        # Notify
+        try:
+            ctx.bus.emit("cancel")
         except Exception:
             pass
         if ctx.coord and ctx.coord.on_change:
@@ -325,7 +331,83 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20"
         ).fetchall()
         recent = ctx.conn.execute(
-            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted') ORDER BY finished_at DESC LIMIT 20"
+            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT 20"
+        ).fetchall()
+        running_flows = _flows(ctx, int(running["id"])) if running else []
+        queued_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in queued}
+        recent_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in recent}
+        return render_template(
+            "status.html",
+            running=running,
+            running_flows=running_flows,
+            queued=queued,
+            queued_flows=queued_flows_map,
+            recent=recent,
+            recent_flows=recent_flows_map,
+        )
+
+    @app.route("/minotaur/cancel_queued", methods=["POST"])
+    @guard.require()
+    def ui_cancel_queued():
+        from .app import utcnow_str  # reuse utility
+        try:
+            body = request.get_json(silent=True) or {}
+        except Exception:
+            body = {}
+        ticket = body.get("ticket")
+        id_ = body.get("id")
+        now = utcnow_str()
+        cancelled = False
+        with dbm.tx(ctx.conn):
+            if ticket:
+                cur = ctx.conn.execute(
+                    "SELECT id FROM challenges WHERE status='queued' AND ticket=? LIMIT 1",
+                    (ticket,),
+                ).fetchone()
+            elif id_ is not None:
+                try:
+                    id_i = int(id_)
+                except Exception:
+                    id_i = None
+                cur = (
+                    ctx.conn.execute(
+                        "SELECT id FROM challenges WHERE status='queued' AND id=? LIMIT 1",
+                        (id_i,),
+                    ).fetchone()
+                    if id_i is not None
+                    else None
+                )
+            else:
+                cur = None
+            if cur is not None:
+                try:
+                    ctx.conn.execute(
+                        "INSERT INTO challenge_requests(challenge_id, api, req_key, phase, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?,?,?)",
+                        (int(cur["id"]), "event", "cancel_queued", "cancel", 0, "{}", "{}", now),
+                    )
+                except Exception:
+                    pass
+                ctx.conn.execute(
+                    "UPDATE challenges SET status='cancelled_queue', finished_at=? WHERE id=? AND status='queued'",
+                    (now, int(cur["id"])),
+                )
+                cancelled = True
+        # Emit and re-render status
+        try:
+            if cancelled:
+                ctx.bus.emit("cancel_queued")
+                if ctx.coord and ctx.coord.on_change:
+                    ctx.coord.on_change("cancel_queued")
+        except Exception:
+            pass
+        running = ctx.conn.execute(
+            "SELECT * FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        queued = ctx.conn.execute(
+            "SELECT * FROM challenges WHERE status='queued' ORDER BY effective_priority DESC, enqueued_at ASC LIMIT 20"
+        ).fetchall()
+        recent = ctx.conn.execute(
+            "SELECT * FROM challenges WHERE status IN ('success','timeout','giveup','error','interrupted','cancelled_queue','terminated_running') ORDER BY finished_at DESC LIMIT 20"
         ).fetchall()
         running_flows = _flows(ctx, int(running["id"])) if running else []
         queued_flows_map = {c["id"]: _flows(ctx, int(c["id"])) for c in queued}
