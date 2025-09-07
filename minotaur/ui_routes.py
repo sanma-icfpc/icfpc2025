@@ -343,6 +343,9 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             open_cnt = None
             method = None
             kind = "fd"
+            by_kind: Dict[str, int] = {}
+            samples: list[str] = []
+            max_samples = 200
             # Try POSIX rlimit for max files
             try:
                 import resource  # type: ignore
@@ -356,8 +359,37 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                 p = f"/proc/{os.getpid()}/fd"
                 try:
                     if os.path.isdir(p):
-                        open_cnt = len(list(os.scandir(p)))
-                        method = "proc"
+                        it = os.scandir(p)
+                        try:
+                            for de in it:
+                                try:
+                                    target = os.readlink(de.path)
+                                except Exception:
+                                    target = "?"
+                                t = target
+                                k = "file"
+                                if t.startswith("socket:"):
+                                    k = "socket"
+                                elif t.startswith("pipe:"):
+                                    k = "pipe"
+                                elif t.startswith("anon_inode:"):
+                                    k = "anon_inode"
+                                elif t.startswith("eventfd"):
+                                    k = "eventfd"
+                                elif t.startswith("memfd:"):
+                                    k = "memfd"
+                                elif t.startswith("/dev/pts") or t.startswith("/dev/tty"):
+                                    k = "tty"
+                                by_kind[k] = int(by_kind.get(k, 0)) + 1
+                                if len(samples) < max_samples:
+                                    samples.append(f"{de.name} -> {t}")
+                            open_cnt = sum(by_kind.values())
+                            method = "proc"
+                        finally:
+                            try:
+                                it.close()
+                            except Exception:
+                                pass
                 except Exception:
                     pass
             if open_cnt is None:
@@ -372,6 +404,16 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                         open_cnt = int(pr.num_handles())
                         method = "psutil_num_handles"
                         kind = "handles"
+                    # Try to collect file list if available
+                    try:
+                        of = pr.open_files()
+                        for f in of:
+                            if len(samples) < max_samples:
+                                samples.append(str(getattr(f, 'path', '')) or str(f))
+                        if of:
+                            by_kind['file'] = int(by_kind.get('file', 0)) + len(of)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
             return jsonify({
@@ -381,6 +423,9 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
                 "open": open_cnt,
                 "kind": kind,
                 "method": method,
+                "byKind": by_kind,
+                "maxSamples": max_samples,
+                "samples": samples,
             })
         except Exception:
             return jsonify({"error": "fd_info_failed"}), 500
@@ -739,3 +784,44 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             pass
         return jsonify(out)
+
+    @app.route("/minotaur/sched_info")
+    @guard.require()
+    def ui_sched_info():
+        import time as _t
+        try:
+            running = ctx.conn.execute(
+                "SELECT id, agent_name, started_at FROM challenges WHERE status='running' ORDER BY started_at DESC LIMIT 1"
+            ).fetchone()
+            queued_total = ctx.conn.execute(
+                "SELECT COUNT(1) AS c FROM challenges WHERE status='queued'"
+            ).fetchone()
+            qt = int(queued_total["c"]) if queued_total else 0
+            pin = ctx.conn.execute(
+                "SELECT name, pinned FROM agent_priorities WHERE pinned IN (1,2) LIMIT 1"
+            ).fetchone()
+            pin_info = None
+            if pin is not None:
+                pin_info = {
+                    "name": pin["name"],
+                    "mode": "persistent" if int(pin["pinned"]) == 1 else "one_shot",
+                }
+            # Coordinator hold window insight (best-effort)
+            hold_until = None
+            hold_remaining = None
+            try:
+                hu = getattr(ctx.coord, "_pin_hold_until", 0.0)
+                if isinstance(hu, (int, float)) and hu > 0:
+                    hold_until = float(hu)
+                    hold_remaining = max(0.0, hold_until - _t.time())
+            except Exception:
+                pass
+            return jsonify({
+                "running": dict(running) if running else None,
+                "queued_total": qt,
+                "pinned": pin_info,
+                "pin_hold_until": hold_until,
+                "pin_hold_remaining": hold_remaining,
+            })
+        except Exception:
+            return jsonify({"error": "sched_info_failed"}), 500

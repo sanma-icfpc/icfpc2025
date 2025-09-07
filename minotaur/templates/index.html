@@ -54,7 +54,9 @@
       </div>
       <div>
         <h2 class="font-semibold mb-2">File Descriptors</h2>
-        <div id="fds-info" class="text-sm text-gray-700">—</div>
+        <div id="fds-info" class="text-sm text-gray-700">
+          —
+        </div>
       </div>
       <div>
         <h2 class="font-semibold mb-2">Server Threads</h2>
@@ -185,6 +187,7 @@
       .then(j => {
         try {
           if (j && j.error) { out.textContent = '—'; return; }
+          // Build summary line
           const plat = (j && j.platform) ? String(j.platform) : '';
           const kind = (j && j.kind) ? String(j.kind) : 'fd';
           const open = (typeof j.open === 'number') ? j.open : null;
@@ -193,8 +196,13 @@
           let parts = [];
           if (open != null) parts.push(`${kind}: ${open}`);
           if (soft != null || hard != null) parts.push(`limit: ${soft != null ? soft : '?'} / ${hard != null ? hard : '?'}`);
-          if (!parts.length) { parts = ['—']; }
-          out.textContent = `${plat}: ${parts.join('  ')}`;
+          const summary = `${plat}: ${parts.join('  ')}`;
+          // Render summary + full JSON details
+          out.innerHTML = '<div id="fds-summary" class="mb-1"></div><pre id="fds-json" class="p-2 bg-gray-50 border rounded text-xs overflow-auto max-h-72"></pre>';
+          const sumEl = out.querySelector('#fds-summary');
+          const preEl = out.querySelector('#fds-json');
+          if (sumEl) sumEl.textContent = summary;
+          if (preEl) preEl.textContent = JSON.stringify(j, null, 2);
         } catch (_) { out.textContent = '—'; }
       })
       .catch(() => { const out2 = document.getElementById('fds-info'); if (out2) out2.textContent = '—'; });
