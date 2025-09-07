@@ -677,6 +677,22 @@
       } catch (_) { return false; }
     }
 
+    // Toggle generic card Request panel (used by Queued)
+    function toggleCardRequests(headerEl) {
+      try {
+        if (!headerEl) return false;
+        let scope = headerEl.parentElement || null;
+        let container = null;
+        if (scope) container = scope.querySelector('[data-card-requests]');
+        if (!container) container = headerEl.nextElementSibling;
+        if (!container) return false;
+        container.classList.toggle('hidden');
+        const caret = headerEl.querySelector('[data-caret]');
+        if (caret) caret.textContent = container.classList.contains('hidden') ? '▸' : '▾';
+        return false;
+      } catch (_) { return false; }
+    }
+
     // Delegate click to Recent toggle headers to avoid inline-handler quirks
     (function bindRecentToggleDelegation(){
       const once = function() {

@@ -1,0 +1,123 @@
+{% macro task_card(kind, t, flows) %}
+  {# kind: 'queued' | 'recent' | 'running' #}
+  {% set is_recent = (kind == 'recent') %}
+  {% set is_queued = (kind == 'queued') %}
+  {% set is_running = (kind == 'running') %}
+  <div class="border rounded p-2 {{ 'pr-12' if is_queued else '' }} text-sm relative">
+    <div class="absolute top-2 right-2">
+      <div class="{{ 'w-8 h-8' if is_running else 'w-7 h-7' }} rounded-md border overflow-hidden">
+        <svg width="{{ 32 if is_running else 28 }}" height="{{ 32 if is_running else 28 }}" data-jdenticon-value="{{ t.agent_name or '*' }}"></svg>
+      </div>
+    </div>
+    <div class="flex items-center justify-between">
+      <div class="w-full truncate">
+        <div class="flex items-center flex-wrap gap-x-2">
+          <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+          <span class="text-gray-500">problem:</span>
+          <span class="truncate">{{ t.problem_id }}</span>
+          <span class="ml-3 text-gray-500">agent:</span>
+          {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
+          {% if is_queued %}
+            <span class="ml-3 text-gray-500">prio:</span>
+            <span class="font-mono text-xs">{{ t.effective_priority }}</span>
+          {% endif %}
+        </div>
+        <div class="mt-1 text-xs text-gray-600">
+          <span class="text-gray-500">src:</span> {{ t.source_ip or '-' }}
+          <span class="ml-4 text-gray-500">ticket:</span> <code>{{ t.ticket }}</code>
+        </div>
+      </div>
+      {% if is_queued %}
+      <div class="text-xs text-gray-600 ml-2 whitespace-nowrap">
+        <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="cancelQueued('{{ t.ticket }}'); return false;">Cancel</button>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if is_running %}
+      <div class="mt-3">
+        <button class="px-3 py-1 bg-red-600 text-white rounded" onclick="cancelRunning(event)">Terminate</button>
+      </div>
+    {% endif %}
+
+    <div class="mt-2">
+      {% if is_recent %}
+        <div class="flex items-center gap-2 select-none cursor-pointer" data-recent-toggle="1" role="button" tabindex="0">
+          <h4 class="font-semibold text-xs mb-1">Request</h4>
+          <span class="text-gray-500 text-xs" data-caret>▸</span>
+        </div>
+        <div class="text-xs bg-gray-50 border rounded p-2 hidden" data-recent-requests>
+          <div class="grid grid-cols-12 gap-2 font-mono text-gray-500 border-b pb-1 mb-1">
+            <div class="col-span-4">時刻</div>
+            <div class="col-span-2">リクエスト</div>
+            <div class="col-span-4">進捗</div>
+            <div class="col-span-2 text-right">コード</div>
+          </div>
+      {% elif is_running %}
+        <h4 class="font-semibold text-sm mb-1">Requests</h4>
+        <div class="text-xs bg-gray-50 border rounded p-2 max-h-64 overflow-auto">
+          <div class="grid grid-cols-12 gap-2 font-mono text-gray-500 border-b pb-1 mb-1">
+            <div class="col-span-4">時刻</div>
+            <div class="col-span-2">リクエスト</div>
+            <div class="col-span-4">進捗</div>
+            <div class="col-span-2 text-right">コード</div>
+          </div>
+      {% elif is_queued %}
+        <div class="flex items-center gap-2 select-none cursor-pointer" data-card-toggle="1" role="button" tabindex="0" onclick="toggleCardRequests(this)">
+          <h4 class="font-semibold text-xs mb-1">Request</h4>
+          <span class="text-gray-500 text-xs" data-caret>▸</span>
+        </div>
+        <div class="text-xs bg-gray-50 border rounded p-2 hidden" data-card-requests>
+          <div class="grid grid-cols-12 gap-2 font-mono text-gray-500 border-b pb-1 mb-1">
+            <div class="col-span-4">時刻</div>
+            <div class="col-span-2">リクエスト</div>
+            <div class="col-span-4">進捗</div>
+            <div class="col-span-2 text-right">コード</div>
+          </div>
+      {% else %}
+        <div class="text-xs bg-gray-50 border rounded p-2">
+      {% endif %}
+          {% for f in (flows or []) %}
+            <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden'); {% if is_recent or is_running %}(this.querySelectorAll ? this.querySelectorAll('.summary-inline').forEach(el=>el.classList.toggle('hidden')) : null){% endif %}">
+              <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
+              <div class="col-span-2">
+                {% if f.api == 'event' %}
+                  <div class="text-gray-500">(internal)</div>
+                  {% if f.summary %}<div class="text-gray-400 {% if is_recent or is_running %}summary-inline hidden{% endif %}">{{ f.summary }}</div>{% endif %}
+                {% else %}
+                  <div>/{{ f.api }}</div>
+                  {% if f.summary %}<div class="text-gray-400 {% if is_recent or is_running %}summary-inline hidden{% endif %}">{{ f.summary }}</div>{% endif %}
+                {% endif %}
+              </div>
+              <div class="col-span-4">
+                {% if f.api == 'event' %}
+                  <span class="text-gray-600">{{ f.summary or '(internal)' }}</span>
+                {% else %}
+                  <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
+                  → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
+                  → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
+                  → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                {% endif %}
+              </div>
+              <div class="col-span-2 text-right">
+                {% set c = f.codes %}
+                <span class="{{ 'text-green-600' if c.get('from_upstream',0)==200 or c.get('agent_out',0)==200 else 'text-gray-600' }}">{{ c.get('from_upstream') or c.get('agent_out') or '' }}</span>
+              </div>
+            </div>
+            <div class="hidden pl-4 text-gray-600">
+              <div class="grid grid-cols-12 gap-2">
+                {% if f.api != 'event' %}
+                  <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
+                  <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                {% else %}
+                  <div class="col-span-12 text-gray-500">(internal event)</div>
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <div class="text-gray-400">No requests{% if is_recent or is_running %}.{% else %} yet.{% endif %}</div>
+          {% endfor %}
+        </div>
+    </div>
+  </div>
+{% endmacro %}
