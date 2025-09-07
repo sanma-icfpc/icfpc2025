@@ -505,6 +505,85 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             pass
         return jsonify(info)
 
+    @app.route("/minotaur/mem_objects")
+    @guard.require()
+    def ui_mem_objects():
+        """Summarize GC-tracked Python objects by type.
+
+        Warning: `gc.get_objects()` builds a list of all GC-tracked container objects
+        and can be expensive on large processes. This endpoint is intended for
+        on-demand diagnostics from the Admin tab and should not be polled.
+        """
+        import time as _t
+        import gc as _gc
+        import sys as _sys  # noqa: F401
+        t0 = _t.perf_counter()
+        out: Dict[str, Any] = {"ok": True}
+        try:
+            objs = _gc.get_objects()
+            out["totalObjects"] = int(len(objs))
+            from collections import Counter
+            c = Counter()
+            for o in objs:
+                try:
+                    c[type(o).__name__] += 1
+                except Exception:
+                    c["<unknown>"] += 1
+            # top N types
+            try:
+                limit = int(request.args.get("limit", "40"))
+            except Exception:
+                limit = 40
+            top = c.most_common(max(1, min(200, limit)))
+            out["topTypes"] = [{"type": k, "count": v} for k, v in top]
+            # GC stats and thresholds
+            try:
+                out["gcCount"] = tuple(_gc.get_count())
+            except Exception:
+                pass
+            try:
+                out["gcThreshold"] = tuple(_gc.get_threshold())
+            except Exception:
+                pass
+            try:
+                out["gcStats"] = _gc.get_stats()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        except Exception as e:
+            out = {"ok": False, "error": str(e)}
+        finally:
+            out["elapsedMs"] = int(((_t.perf_counter() - t0) * 1000.0))
+        return jsonify(out)
+
+    @app.route("/minotaur/gc_collect", methods=["POST"])
+    @guard.require()
+    def ui_gc_collect():
+        import gc as _gc
+        try:
+            before = tuple(_gc.get_count())
+        except Exception:
+            before = None
+        try:
+            collected = int(_gc.collect())
+            try:
+                unreachable = int(getattr(_gc, "garbage", []) and len(_gc.garbage) or 0)
+            except Exception:
+                unreachable = None
+            after = None
+            try:
+                after = tuple(_gc.get_count())
+            except Exception:
+                pass
+            return jsonify({
+                "ok": True,
+                "collected": collected,
+                "unreachable": unreachable,
+                "before": before,
+                "after": after,
+            })
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
     @app.route("/minotaur/analytics")
     @guard.require()
     def ui_analytics():

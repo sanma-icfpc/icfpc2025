@@ -60,11 +60,16 @@
       </div>
       <div>
         <h2 class="font-semibold mb-2">Memory</h2>
-        <div class="text-sm text-gray-700">
+        <div class="text-sm text-gray-700 flex items-center gap-2 mb-1">
           <span id="mem-summary">—</span>
+          <button class="ml-2 px-2 py-0.5 text-xs bg-gray-200 rounded" onclick="runGC(); return false;">Run GC</button>
+          <button class="px-2 py-0.5 text-xs bg-gray-200 rounded" onclick="loadMemObjects(); return false;">Analyze Objects</button>
         </div>
         <div class="mt-1">
-          <pre id="mem-json" class="p-2 bg-gray-50 border rounded text-xs overflow-auto max-h-72">—</pre>
+          <pre id="mem-json" class="p-2 bg-gray-50 border rounded text-xs overflow-auto max-h-48">—</pre>
+        </div>
+        <div class="mt-1">
+          <pre id="mem-objects" class="p-2 bg-gray-50 border rounded text-xs overflow-auto max-h-48">(click "Analyze Objects")</pre>
         </div>
       </div>
       <div>
@@ -254,6 +259,40 @@
     if (el && !el.classList.contains('hidden')) {
       loadMemInfo();
     }
+  }
+
+  function runGC() {
+    const btns = document.querySelectorAll('#tab-admin button');
+    btns.forEach(b => b.disabled = true);
+    fetch('/minotaur/gc_collect', { method: 'POST', credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          const pre = document.getElementById('mem-json');
+          if (pre) pre.textContent = JSON.stringify({ gcCollect: j }, null, 2);
+          loadMemInfo();
+        } catch (_) {}
+      })
+      .catch(() => {})
+      .finally(() => { btns.forEach(b => b.disabled = false); });
+  }
+
+  function loadMemObjects() {
+    const pre = document.getElementById('mem-objects');
+    if (!pre) return;
+    pre.textContent = '(collecting…)';
+    fetch('/minotaur/mem_objects?limit=40', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          if (j && j.ok === false) {
+            pre.textContent = 'error: ' + (j.error || 'unknown');
+            return;
+          }
+          pre.textContent = JSON.stringify(j, null, 2);
+        } catch (_) { pre.textContent = '(error)'; }
+      })
+      .catch(() => { pre.textContent = '(error)'; });
   }
 
   function loadThreadsInfo() {
