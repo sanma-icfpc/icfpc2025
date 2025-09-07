@@ -146,7 +146,8 @@ register_priority_routes(app, ctx)
 @app.route("/minotaur/healthz")
 def healthz():
     try:
-        dbm.query_one(conn, "SELECT 1")
+        # Use the boot-time raw connection; lightweight and avoids thread-local creation
+        dbm.query_one(_raw_conn, "SELECT 1")
         return jsonify({"status": "ok"})
     except Exception:
         return jsonify({"status": "ng"}), 500

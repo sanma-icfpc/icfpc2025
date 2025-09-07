@@ -331,6 +331,60 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
         except Exception:
             return jsonify({"error": "stat_failed"}), 500
 
+    @app.route("/minotaur/fd_info")
+    @guard.require()
+    def ui_fd_info():
+        try:
+            plat = (_platform.system() or "").lower()
+            import json as _json  # noqa: F401
+            # Defaults
+            soft = None
+            hard = None
+            open_cnt = None
+            method = None
+            kind = "fd"
+            # Try POSIX rlimit for max files
+            try:
+                import resource  # type: ignore
+                soft_h, hard_h = resource.getrlimit(resource.RLIMIT_NOFILE)
+                soft = int(soft_h) if soft_h is not None else None
+                hard = int(hard_h) if hard_h is not None else None
+            except Exception:
+                pass
+            # Count open descriptors/handles
+            if plat == "linux":
+                p = f"/proc/{os.getpid()}/fd"
+                try:
+                    if os.path.isdir(p):
+                        open_cnt = len(list(os.scandir(p)))
+                        method = "proc"
+                except Exception:
+                    pass
+            if open_cnt is None:
+                try:
+                    import psutil  # type: ignore
+                    pr = psutil.Process(os.getpid())
+                    if hasattr(pr, "num_fds"):
+                        open_cnt = int(pr.num_fds())
+                        method = "psutil_num_fds"
+                        kind = "fd"
+                    elif hasattr(pr, "num_handles"):
+                        open_cnt = int(pr.num_handles())
+                        method = "psutil_num_handles"
+                        kind = "handles"
+                except Exception:
+                    pass
+            return jsonify({
+                "platform": _platform.system(),
+                "soft": soft,
+                "hard": hard,
+                "open": open_cnt,
+                "kind": kind,
+                "method": method,
+            })
+        except Exception:
+            return jsonify({"error": "fd_info_failed"}), 500
+
     @app.route("/minotaur/analytics")
     @guard.require()
     def ui_analytics():

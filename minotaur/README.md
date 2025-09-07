@@ -4,7 +4,10 @@ minotaurはジャッジプロトコルのプロキシとして振る舞うこと
 また仲介したやりとりを保存しており、簡易的な解析を提供します。SQLiteファイルをダウンロードすることで独自の解析も可能です。
 
 # Run
-`uv run waitress-serve --listen=*:19384 run:app`
+```bash
+$ ulimit -n 16384
+$ uv run waitress-serve --listen=*:19384 --thread=1024 run:app
+```
 
 # Client-Side
 local_judge_server.py を参照し、すべての POST リクエストで以下を設定します

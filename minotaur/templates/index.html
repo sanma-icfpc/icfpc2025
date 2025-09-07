@@ -53,6 +53,10 @@
         </div>
       </div>
       <div>
+        <h2 class="font-semibold mb-2">File Descriptors</h2>
+        <div id="fds-info" class="text-sm text-gray-700">—</div>
+      </div>
+      <div>
         <h2 class="font-semibold mb-2">Server Threads</h2>
         <div class="text-sm text-gray-700 flex items-center gap-3">
           <span>Threads:</span>
@@ -173,10 +177,34 @@
       .catch(() => { /* ignore */ });
   }
 
+  function loadFDInfo() {
+    const out = document.getElementById('fds-info');
+    if (!out) return;
+    fetch('/minotaur/fd_info', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          if (j && j.error) { out.textContent = '—'; return; }
+          const plat = (j && j.platform) ? String(j.platform) : '';
+          const kind = (j && j.kind) ? String(j.kind) : 'fd';
+          const open = (typeof j.open === 'number') ? j.open : null;
+          const soft = (typeof j.soft === 'number') ? j.soft : null;
+          const hard = (typeof j.hard === 'number') ? j.hard : null;
+          let parts = [];
+          if (open != null) parts.push(`${kind}: ${open}`);
+          if (soft != null || hard != null) parts.push(`limit: ${soft != null ? soft : '?'} / ${hard != null ? hard : '?'}`);
+          if (!parts.length) { parts = ['—']; }
+          out.textContent = `${plat}: ${parts.join('  ')}`;
+        } catch (_) { out.textContent = '—'; }
+      })
+      .catch(() => { const out2 = document.getElementById('fds-info'); if (out2) out2.textContent = '—'; });
+  }
+
   function refreshDBInfoIfVisible() {
     const el = document.getElementById('tab-admin');
     if (el && !el.classList.contains('hidden')) {
       loadDBInfo();
+      loadFDInfo();
     }
   }
 

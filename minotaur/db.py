@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import os
+from pathlib import Path
 import sqlite3
 import threading
 from typing import Any, Iterable, List, Optional
@@ -9,13 +11,99 @@ from typing import Any, Iterable, List, Optional
 _LOCAL = threading.local()
 
 
+def _ensure_parent_dir_for_path(db_path: str) -> None:
+    """Ensure the parent directory for a disk-backed SQLite path exists.
+
+    - No-op for in-memory or non-file paths/URIs.
+    - For file: URIs, extracts the filesystem path portion and mkdirs its parent.
+    """
+    try:
+        p = db_path.strip()
+        # Skip in-memory DBs
+        if p == ":memory:" or (p.startswith("file:") and "mode=memory" in p):
+            return
+        fs_path: Optional[str] = None  # type: ignore
+        if p.startswith("file:"):
+            # Extract path portion up to '?' (sqlite URI semantics)
+            raw = p[len("file:"):]
+            q = raw.find("?")
+            if q != -1:
+                raw = raw[:q]
+            fs_path = raw
+            # Normalize relative path under our package base dir to avoid CWD issues
+            if fs_path and not os.path.isabs(fs_path):
+                try:
+                    from .config import BASE_DIR  # lazy import to avoid cycles
+                    fs_path = os.path.join(BASE_DIR, fs_path)
+                except Exception:
+                    pass
+        elif not p.startswith("sqlite:"):
+            # Treat as a normal filesystem path
+            fs_path = p
+        if fs_path:
+            parent = Path(fs_path).expanduser().resolve().parent
+            try:
+                parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+    except Exception:
+        # Best-effort only; connection attempt will surface errors if any
+        pass
+
+
 def get_conn(path: str) -> sqlite3.Connection:
     conn: Optional[sqlite3.Connection] = getattr(_LOCAL, "conn", None)
     if conn is not None:
         return conn
     # Enable URI when using shared in-memory DB or file: URIs
     use_uri = path.startswith("file:") or "mode=memory" in path or path.startswith("sqlite:")
-    conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None, uri=use_uri)
+    # Ensure directory exists for on-disk databases to avoid SQLITE_CANTOPEN
+    _ensure_parent_dir_for_path(path)
+
+    # Optional debug logging gate
+    _dbg = (os.getenv("MINOTAUR_DB_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"})
+    if _dbg:
+        try:
+            fs_path: Optional[str] = None
+            if path.startswith("file:"):
+                raw = path[len("file:"):]
+                q = raw.find("?")
+                if q != -1:
+                    raw = raw[:q]
+                fs_path = raw
+                if fs_path and not os.path.isabs(fs_path):
+                    try:
+                        from .config import BASE_DIR  # lazy import
+                        fs_path = os.path.join(BASE_DIR, fs_path)
+                    except Exception:
+                        pass
+            elif not path.startswith("sqlite:"):
+                fs_path = path
+            parent = None
+            exists = None
+            writable = None
+            parent_exists = None
+            parent_writable = None
+            if fs_path:
+                exists = os.path.exists(fs_path)
+                writable = os.access(fs_path, os.W_OK) if exists else None
+                parent = os.path.dirname(os.path.abspath(fs_path))
+                parent_exists = os.path.isdir(parent)
+                parent_writable = os.access(parent, os.W_OK) if parent_exists else None
+            print(f"[db.debug] opening sqlite path='{path}' uri={use_uri} fs_path={fs_path} cwd='{os.getcwd()}' exists={exists} writable={writable} parent='{parent}' parent_exists={parent_exists} parent_writable={parent_writable}", flush=True)
+        except Exception:
+            pass
+
+    try:
+        conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None, uri=use_uri)
+    except Exception as e:
+        if _dbg:
+            # Emit a hint about typical CANTOPEN causes
+            try:
+                print(f"[db.debug] sqlite connect failed for path='{path}': {e}", flush=True)
+            except Exception:
+                pass
+        raise
     conn.row_factory = sqlite3.Row
     with conn:
         try:

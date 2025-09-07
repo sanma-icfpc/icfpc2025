@@ -74,7 +74,17 @@ def load_settings_from_env() -> Settings:
         db_path = "file:minotaur?mode=memory&cache=shared"
         print('using in-memory DB')
     else:
-        db_path = env_db or str(Path(BASE_DIR) / "coordinator.sqlite")
+        # If MINOTAUR_DB is set and is a relative filesystem path (not a URI),
+        # resolve it under the package base dir for stability across CWDs.
+        if env_db:
+            env_db_s = env_db.strip()
+            if not (env_db_s.startswith("file:") or env_db_s.startswith("sqlite:")):
+                p = Path(env_db_s)
+                if not p.is_absolute():
+                    env_db_s = str(Path(BASE_DIR) / p)
+            db_path = env_db_s
+        else:
+            db_path = str(Path(BASE_DIR) / "coordinator.sqlite")
         print('using disk-backed DB')
 
     return Settings(
@@ -94,7 +104,7 @@ def load_settings_from_env() -> Settings:
         # Default to package path users.yaml; resolve relative paths under package dir
         auth_file=resolve_under_base(os.getenv("AUTH_FILE") or "users.yaml"),
         settings_file=resolve_under_base(os.getenv("SETTINGS_FILE") or "settings.yaml"),
-        waitress_threads=int(os.getenv("WAITRESS_THREADS", "32")),
+        waitress_threads=int(os.getenv("WAITRESS_THREADS", "128")),
         pin_hold_sec=float(os.getenv("PIN_HOLD_SEC", "10.0")),
     )
 
