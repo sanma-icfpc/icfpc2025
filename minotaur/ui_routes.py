@@ -8,6 +8,8 @@ from flask import Response, jsonify, make_response, render_template, request, st
 from .context import AppCtx
 from .sched_fair import accumulate_service
 import threading, os, time as _time
+import platform as _platform
+import sys as _sys
 
 
 def _fmt_ts(ts: str) -> str:
@@ -349,3 +351,134 @@ def register_ui_routes(app, ctx: AppCtx) -> None:
             os._exit(0)
         threading.Thread(target=_killer, daemon=True).start()
         return jsonify({"ok": True})
+
+    @app.route("/minotaur/threads_os")
+    @guard.require()
+    def ui_threads_os():
+        pid = os.getpid()
+        plat = (_platform.system() or "").lower()
+        # Map Python threads by native id if available (3.8+)
+        py_threads = {}
+        try:
+            import threading as _th
+            for t in _th.enumerate():
+                try:
+                    nid = getattr(t, "native_id", None)
+                except Exception:
+                    nid = None
+                py_threads[int(nid)] = {
+                    "py_name": t.name,
+                    "daemon": bool(getattr(t, "daemon", False)),
+                } if nid is not None else {}
+        except Exception:
+            pass
+
+        out = {"pid": pid, "platform": _platform.system(), "threads": [], "summary": {}}
+
+        def _merge_py(meta: dict, tid: int) -> dict:
+            pt = py_threads.get(int(tid)) or {}
+            if pt:
+                meta = dict(meta)
+                meta.update(pt)
+            return meta
+
+        if plat == "linux":
+            base = f"/proc/{pid}/task"
+            try:
+                tids = []
+                for name in os.listdir(base):
+                    try:
+                        tids.append(int(name))
+                    except Exception:
+                        continue
+                tids.sort()
+                try:
+                    clk_tck = os.sysconf(os.sysconf_names.get('SC_CLK_TCK', 'SC_CLK_TCK'))
+                except Exception:
+                    clk_tck = 100
+                for tid in tids:
+                    tdir = f"{base}/{tid}"
+                    st = {"id": tid}
+                    # status
+                    try:
+                        with open(f"{tdir}/status", "r", encoding="utf-8", errors="ignore") as f:
+                            for line in f:
+                                if line.startswith("Name:"):
+                                    st["name"] = line.split(":",1)[1].strip()
+                                elif line.startswith("State:"):
+                                    # e.g., "State:\tS (sleeping)"
+                                    val = line.split(":",1)[1].strip()
+                                    st["state"] = val
+                                elif line.startswith("voluntary_ctxt_switches:"):
+                                    try:
+                                        st["vcsw"] = int(line.rsplit(None,1)[-1])
+                                    except Exception:
+                                        pass
+                                elif line.startswith("nonvoluntary_ctxt_switches:"):
+                                    try:
+                                        st["nvcsw"] = int(line.rsplit(None,1)[-1])
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
+                    # stat (CPU times)
+                    try:
+                        with open(f"{tdir}/stat", "r", encoding="utf-8", errors="ignore") as f:
+                            sline = f.readline().strip()
+                        # parse comm in parentheses
+                        rpar = sline.rfind(")")
+                        part = sline[rpar+2:].split()
+                        # fields: 3=state, 14=utime, 15=stime -> indices 11 and 12 after slicing
+                        ut = int(part[11]) if len(part) > 11 else 0
+                        st_ = int(part[12]) if len(part) > 12 else 0
+                        st["cpu_time_sec"] = (ut + st_) / float(clk_tck or 100)
+                    except Exception:
+                        pass
+                    # wchan
+                    try:
+                        with open(f"{tdir}/wchan", "r", encoding="utf-8", errors="ignore") as f:
+                            st["wchan"] = (f.read().strip() or None)
+                    except Exception:
+                        pass
+                    out["threads"].append(_merge_py(st, tid))
+                # Summary by state initial letter (e.g., R,S,D,...)
+                summ = {}
+                for t in out["threads"]:
+                    stv = t.get("state") or "?"
+                    key = stv.split()[0] if stv else "?"
+                    summ[key] = int(summ.get(key, 0)) + 1
+                out["summary"] = summ
+            except Exception as e:
+                out["error"] = f"linux_proc_read_failed: {e}"
+        else:
+            # Try psutil if available for other platforms
+            try:
+                import psutil  # type: ignore
+                p = psutil.Process(pid)
+                thr = p.threads()
+                for th in thr:
+                    meta = {
+                        "id": int(getattr(th, 'id', 0)),
+                        "cpu_time_sec": float(getattr(th, 'user_time', 0.0)) + float(getattr(th, 'system_time', 0.0)),
+                    }
+                    out["threads"].append(_merge_py(meta, meta["id"]))
+                out["summary"] = {"count": len(out["threads"]) }
+            except Exception:
+                # Fallback: only Python threads
+                out["threads"] = []
+                try:
+                    import threading as _th
+                    for t in _th.enumerate():
+                        try:
+                            nid = getattr(t, "native_id", None)
+                        except Exception:
+                            nid = None
+                        out["threads"].append({
+                            "id": int(nid) if nid is not None else None,
+                            "py_name": t.name,
+                            "daemon": bool(getattr(t, "daemon", False)),
+                        })
+                    out["summary"] = {"count": len(out["threads"]) }
+                except Exception:
+                    pass
+        return jsonify(out)

@@ -53,6 +53,14 @@
         </div>
       </div>
       <div>
+        <h2 class="font-semibold mb-2">Server Threads</h2>
+        <div class="text-sm text-gray-700 flex items-center gap-3">
+          <span>Threads:</span>
+          <span id="threads-count" class="font-mono">—</span>
+          <span id="threads-states" class="text-xs text-gray-500"></span>
+        </div>
+      </div>
+      <div>
         <h2 class="font-semibold mb-2">Server</h2>
         <button class="px-3 py-1 bg-red-700 text-white rounded" onclick="shutdownServer(event)">サーバを終了</button>
       </div>
@@ -159,12 +167,47 @@
       loadDBInfo();
     }
   }
+
+  function loadThreadsInfo() {
+    const cnt = document.getElementById('threads-count');
+    const stat = document.getElementById('threads-states');
+    if (!cnt) return;
+    fetch('/minotaur/threads_os', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        try {
+          const threads = Array.isArray(j.threads) ? j.threads : [];
+          cnt.textContent = String(threads.length || (j.summary && j.summary.count) || 0);
+          if (stat) {
+            const summary = j.summary || {};
+            const keys = Object.keys(summary).filter(k => k !== 'count').sort();
+            if (threads.length && keys.length) {
+              stat.textContent = keys.map(k => `${k}:${summary[k]}`).join(' ');
+            } else {
+              stat.textContent = '';
+            }
+          }
+        } catch (_) {
+          if (cnt) cnt.textContent = '—';
+          if (stat) stat.textContent = '';
+        }
+      })
+      .catch(() => { if (cnt) cnt.textContent = '—'; if (stat) stat.textContent = ''; });
+  }
+
+  function refreshThreadsIfVisible() {
+    const el = document.getElementById('tab-admin');
+    if (el && !el.classList.contains('hidden')) {
+      loadThreadsInfo();
+    }
+  }
   // Activate from URL parameter on first load
   document.addEventListener('DOMContentLoaded', function() {
     const tab = getURLTab() || 'scheduler';
     switchTab(tab);
     // Preload DB info if Admin is the initial tab
     refreshDBInfoIfVisible();
+    refreshThreadsIfVisible();
   });
 </script>
 {% endblock %}
