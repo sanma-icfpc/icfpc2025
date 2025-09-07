@@ -73,7 +73,8 @@ function updateChart() {
       data: points,
       borderColor: color,
       borderWidth: width,
-      tension: 0.2,
+      tension: 0,
+      cubicInterpolationMode: 'default',
       fill: false,
       // store for dynamic hover dimming
       _baseColor: baseColor,
@@ -115,24 +116,7 @@ function updateChart() {
           ctx.stroke();
         }
       }
-      // Emphasize hovered team line if no explicit highlights
-      if (hoverTeam && highlightTeams.length === 0) {
-        const { data } = chartInstance;
-        data.datasets.forEach((ds, i) => {
-          if (ds.label !== hoverTeam) return;
-          const meta = chartInstance.getDatasetMeta(i);
-          const points = meta?.data || [];
-          if (points.length === 0) return;
-          ctx.strokeStyle = ds.borderColor || '#000';
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          points.forEach((p, idx) => {
-            const x = p.x, y = p.y;
-            if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          });
-          ctx.stroke();
-        });
-      }
+      // No manual redraw for hovered team; we adjust dataset styles instead
       ctx.restore();
     }
   };
@@ -147,6 +131,11 @@ function updateChart() {
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
+      // Compute final snapshot ranks/scores (nearest to latest timestamp)
+      const latest = latestTimestamp();
+      let finalTsStr = null;
+      if (latest) finalTsStr = nearestTimestampStringForDate(latest);
+      const finalSnap = finalTsStr ? buildSnapshot(finalTsStr) : { teamRank: {}, teamScore: {} };
       data.datasets.forEach((ds, i) => {
         const meta = chartInstance.getDatasetMeta(i);
         if (!meta || !meta.data || meta.data.length === 0) return;
@@ -158,7 +147,12 @@ function updateChart() {
         if (isHover) {
           ctx.font = 'bold 12px sans-serif';
         }
-        ctx.fillText(ds.label, rightX, y);
+        const rk = finalSnap.teamRank[ds.label];
+        const sc = finalSnap.teamScore[ds.label];
+        const labelText = (rk !== undefined && sc !== undefined)
+          ? `${ds.label} (${ordinal(rk)}): ${sc}`
+          : ds.label;
+        ctx.fillText(labelText, rightX, y);
       });
       ctx.restore();
     }
@@ -189,6 +183,10 @@ function updateChart() {
       const pt = points[bestIdx];
       const datum = ds.data[bestIdx];
       const score = datum?.y ?? '';
+      // compute rank at nearest timestamp to hoverTs
+      const hoverTsStr = nearestTimestampStringForDate(hoverTs);
+      const snap = hoverTsStr ? buildSnapshot(hoverTsStr) : { teamRank: {} };
+      const r = snap.teamRank[ds.label];
 
       // draw a small marker
       ctx.save();
@@ -196,7 +194,7 @@ function updateChart() {
       ctx.beginPath(); ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2); ctx.fill();
 
       // tooltip text
-      const text = `${ds.label}: ${score}`;
+      const text = (r !== undefined) ? `${ds.label} (${ordinal(r)}): ${score}` : `${ds.label}: ${score}`;
       ctx.font = '12px sans-serif';
       const padding = 6;
       const tw = ctx.measureText(text).width;
@@ -218,6 +216,36 @@ function updateChart() {
       ctx.fillStyle = '#000';
       ctx.fillText(text, tx + padding, ty + th - 6);
       ctx.restore();
+    }
+  };
+
+  // Dynamically reserve enough right padding for labels
+  const adjustRightPaddingPlugin = {
+    id: 'adjustRightPadding',
+    beforeLayout(chartInstance) {
+      const { ctx } = chartInstance;
+      ctx.save();
+      ctx.font = '12px sans-serif';
+      // compute final snapshot ranks/scores for label text
+      const latest = latestTimestamp();
+      let finalTsStr = null;
+      if (latest) finalTsStr = nearestTimestampStringForDate(latest);
+      const finalSnap = finalTsStr ? buildSnapshot(finalTsStr) : { teamRank: {}, teamScore: {} };
+      let maxWidth = 0;
+      (chartInstance.data.datasets || []).forEach((ds) => {
+        const rk = finalSnap.teamRank[ds.label];
+        const sc = finalSnap.teamScore[ds.label];
+        const text = (rk !== undefined && sc !== undefined)
+          ? `${ds.label} (${ordinal(rk)}): ${sc}`
+          : ds.label;
+        const w = ctx.measureText(text).width;
+        if (w > maxWidth) maxWidth = w;
+      });
+      ctx.restore();
+      const desired = Math.ceil(maxWidth + 12); // 8px padding + small margin
+      if (!chartInstance.options.layout) chartInstance.options.layout = { padding: {} };
+      if (!chartInstance.options.layout.padding) chartInstance.options.layout.padding = {};
+      chartInstance.options.layout.padding.right = Math.max(desired, 120);
     }
   };
 
@@ -253,7 +281,7 @@ function updateChart() {
         y: { beginAtZero: true }
       }
     },
-    plugins: [crosshairPlugin, hoverTooltipPlugin, rightLabelsPlugin]
+    plugins: [adjustRightPaddingPlugin, crosshairPlugin, hoverTooltipPlugin, rightLabelsPlugin]
   });
 
   // Mouse interactions for hover/drag selection
@@ -300,7 +328,7 @@ function updateChart() {
         ds.borderWidth = 1;
       } else {
         ds.borderColor = ds._baseColor || ds.borderColor;
-        ds.borderWidth = (hoverTeam && ds.label === hoverTeam) ? 3 : (ds._baseWidth || 1);
+        ds.borderWidth = (hoverTeam && ds.label === hoverTeam) ? 4 : (ds._baseWidth || 1);
       }
     });
   }
@@ -343,6 +371,50 @@ function latestTimestamp() {
     }
   }
   return latest;
+}
+
+// Find the timestamp string closest to a given Date across all teams
+function nearestTimestampStringForDate(d) {
+  if (!d) return null;
+  let nearestTs = null;
+  let minDiff = Infinity;
+  for (const team in allData) {
+    for (const p of allData[team]) {
+      const t = parseTimestamp(p.timestamp);
+      const diff = Math.abs(t - d);
+      if (diff < minDiff) { minDiff = diff; nearestTs = p.timestamp; }
+    }
+  }
+  return nearestTs;
+}
+
+// Build snapshot ranking and score maps at an exact timestamp string
+function buildSnapshot(tsStr) {
+  const allRows = [];
+  for (const team in allData) {
+    if (zeroOnlyTeams.has(team)) continue;
+    let maxScore = null;
+    for (const p of allData[team]) {
+      if (p.timestamp === tsStr) {
+        const s = Number(p.score);
+        if (maxScore === null || s > maxScore) maxScore = s;
+      }
+    }
+    if (maxScore !== null) {
+      allRows.push({ team, score: maxScore });
+    }
+  }
+  allRows.sort((a,b) => b.score - a.score);
+  const teamRank = {};
+  const teamScore = {};
+  allRows.forEach((r, i) => { teamRank[r.team] = i + 1; teamScore[r.team] = r.score; });
+  return { teamRank, teamScore };
+}
+
+function ordinal(n) {
+  const s = ["th","st","nd","rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function showRankingAt(ts) {
