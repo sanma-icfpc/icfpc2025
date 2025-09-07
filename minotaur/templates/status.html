@@ -35,14 +35,23 @@
             <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
               <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
               <div class="col-span-2">
-                <div>/{{ f.api }}</div>
-                {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                {% if f.api == 'event' %}
+                  <div class="text-gray-500">(internal)</div>
+                  {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                {% else %}
+                  <div>/{{ f.api }}</div>
+                  {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                {% endif %}
               </div>
               <div class="col-span-4">
-                <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
-                → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
-                → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
-                → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                {% if f.api == 'event' %}
+                  <span class="text-gray-600">{{ f.summary or '(internal)' }}</span>
+                {% else %}
+                  <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
+                  → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
+                  → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
+                  → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                {% endif %}
               </div>
               <div class="col-span-2 text-right">
                 {% set c = f.codes %}
@@ -51,8 +60,12 @@
             </div>
             <div class="hidden pl-4 text-gray-600">
               <div class="grid grid-cols-12 gap-2">
-                <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
-                <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                {% if f.api != 'event' %}
+                  <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
+                  <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                {% else %}
+                  <div class="col-span-12 text-gray-500">(internal event)</div>
+                {% endif %}
               </div>
             </div>
           {% else %}
@@ -183,14 +196,23 @@
                     <div class="grid grid-cols-12 gap-2 items-center flow-row cursor-pointer" data-key="{{ f.req_key }}" onclick="this.classList.toggle('expanded'); this.nextElementSibling.classList.toggle('hidden')">
                       <div class="col-span-4 rt" data-ts="{{ f.ts }}"></div>
                       <div class="col-span-2">
-                      <div>/{{ f.api }}</div>
-                      {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                        {% if f.api == 'event' %}
+                          <div class="text-gray-500">(internal)</div>
+                          {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                        {% else %}
+                          <div>/{{ f.api }}</div>
+                          {% if f.summary %}<div class="text-gray-400">{{ f.summary }}</div>{% endif %}
+                        {% endif %}
                     </div>
                       <div class="col-span-4">
-                        <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
-                        → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
-                        → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
-                        → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                        {% if f.api == 'event' %}
+                          <span class="text-gray-600">{{ f.summary or '(internal)' }}</span>
+                        {% else %}
+                          <span class="{{ 'text-green-600' if 'agent_in' in f.phases else 'text-gray-400' }}">agent</span>
+                          → <span class="{{ 'text-green-600' if 'to_upstream' in f.phases else 'text-gray-400' }}">minotaur</span>
+                          → <span class="{{ 'text-green-600' if 'from_upstream' in f.phases else 'text-gray-400' }}">upstream</span>
+                          → <span class="{{ 'text-green-600' if 'agent_out' in f.phases else 'text-gray-400' }}">agent</span>
+                        {% endif %}
                       </div>
                       <div class="col-span-2 text-right">
                         {% set c = f.codes %}
@@ -199,8 +221,12 @@
                     </div>
                     <div class="hidden pl-4 text-gray-600">
                       <div class="grid grid-cols-12 gap-2">
-                        <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
-                        <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                        {% if f.api != 'event' %}
+                          <div class="col-span-6"><div class="text-gray-400">req</div><pre class="whitespace-pre-wrap">{{ f.req_pretty }}</pre></div>
+                          <div class="col-span-6"><div class="text-gray-400">res</div><pre class="whitespace-pre-wrap">{{ f.res_pretty }}</pre></div>
+                        {% else %}
+                          <div class="col-span-12 text-gray-500">(internal event)</div>
+                        {% endif %}
                       </div>
                     </div>
                   {% else %}

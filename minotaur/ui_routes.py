@@ -50,10 +50,13 @@ def _flows(ctx: AppCtx, ch_id: int):
                 "req_pretty": None,
                 "res_pretty": None,
                 "summary": "",
+                "internal": False,
             }
             d[key] = item
         ph = r["phase"]
         item["phases"].add(ph)
+        if r["api"] == "event":
+            item["internal"] = True
         try:
             sc = int(r["status_code"]) if r["status_code"] is not None else 0
         except Exception:
@@ -90,6 +93,16 @@ def _flows(ctx: AppCtx, ch_id: int):
                 rooms = m.get("rooms") or []
                 conns = m.get("connections") or []
                 item["summary"] = f"rooms={len(rooms)} conns={len(conns)} correct={ok}"
+            elif r["api"] == "event":
+                # Summarize internal state changes by listing phases
+                try:
+                    evs = sorted(list(item["phases"]))
+                    if evs:
+                        item["summary"] = "state change: " + ", ".join(evs)
+                    else:
+                        item["summary"] = "state change"
+                except Exception:
+                    item["summary"] = "state change"
         except Exception:
             pass
     out = list(d.values())
