@@ -5,6 +5,10 @@
       <h3 class="font-semibold">Recent</h3>
       <div class="text-sm flex items-center gap-2">
         <input id="recent-filter-input" type="text" class="border rounded px-2 py-1 w-64" placeholder="Filter by agent or problem" value="{{ recent_filter or '' }}" />
+        <button type="button" class="ml-4 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded shadow-sm text-gray-700"
+                onclick="manualRefreshRecent(); return false;" title="Refresh only when you want to update the list">
+          🔄 Refresh manually
+        </button>
       </div>
     </div>
     <div id="recent-pager" class="text-sm flex items-center gap-2" data-page="{{ recent_page or 1 }}" data-pages="{{ recent_pages or 1 }}">
@@ -27,4 +31,3 @@
     {% endif %}
   </div>
 </div>
-
