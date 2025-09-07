@@ -18,6 +18,7 @@ import json
 import random
 import requests
 import datetime
+import traceback
 
 
 # BASE_URL = "https://31pwr5t6ij.execute-api.eu-west-2.amazonaws.com"
@@ -700,4 +701,4 @@ if __name__ == "__main__":
                     "HTTP error:", e.response.text if hasattr(e, "response") else str(e)
                 )
             except Exception as ex:
-                print("Error:", ex.format_exc())
+                print("Error:", traceback.format_exception(ex))
