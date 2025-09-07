@@ -39,7 +39,7 @@ class AedificiumClient:
         team_id: Optional[str] = None,
     ):
         self.base_url = base_url.rstrip("/")
-        print(f"{self.base_url=}")
+        print(f"{self.base_url=}", flush=True)
         self.id = team_id
 
     def _post(self, path: str, payload: Dict) -> Dict:
@@ -638,7 +638,7 @@ def main(problem_name: str, n_rooms: int):
         print("Registered; set ICFP_ID to:", client.id)
 
     chosen = client.select_problem(problem_name)
-    print("Selected:", chosen)
+    print("Selected:", chosen, flush=True)
 
     oracle = ExploreOracle(client, max_steps_per_plan=MAX_DOOR_STEPS_PER_PLAN)
     learner = LStarMooreWithMarks(oracle)
@@ -656,9 +656,9 @@ def main(problem_name: str, n_rooms: int):
 
     guess_map = learner.reconstruct(hyp, n_rooms)
 
-    print(json.dumps(guess_map))
+    print(json.dumps(guess_map), flush=True)
     ok = client.guess(guess_map)
-    print("Guess correct?", ok)
+    print("Guess correct?", ok, flush=True)
 
 
 if __name__ == "__main__":
@@ -686,7 +686,9 @@ if __name__ == "__main__":
                 main(problem_name, n_rooms)
             except requests.HTTPError as e:
                 print(
-                    "HTTP error:", e.response.text if hasattr(e, "response") else str(e)
+                    "HTTP error:",
+                    e.response.text if hasattr(e, "response") else str(e),
+                    flush=True,
                 )
             except Exception as ex:
-                print("Error:", traceback.format_exception(ex))
+                print("Error:", traceback.format_exception(ex), flush=True)
