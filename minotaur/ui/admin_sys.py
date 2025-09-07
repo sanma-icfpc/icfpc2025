@@ -95,15 +95,22 @@ def create_admin_sys_bp(ctx: AppCtx) -> Blueprint:
             mem = p.memory_info()
             rss = getattr(mem, "rss", None)
             vms = getattr(mem, "vms", None)
+            thr_mb = int(getattr(ctx.s, "rss_reboot_mb", 0) or 0)
+            rss_mb_val = (rss / (1024 * 1024)) if rss is not None else None
+            over_thr = bool(thr_mb > 0 and (rss_mb_val is not None) and (rss_mb_val >= thr_mb))
             out = {
                 "rss": int(rss) if rss is not None else None,
-                "rssMB": (rss / (1024 * 1024)) if rss is not None else None,
+                "rssMB": rss_mb_val,
                 "vms": int(vms) if vms is not None else None,
                 "vmsMB": (vms / (1024 * 1024)) if vms is not None else None,
                 "threads": int(p.num_threads()),
                 "py_threads": None,
                 "py_gc": None,
                 "ts": _t.time(),
+                # Augment for UI badges
+                "rssThrMB": thr_mb,
+                "draining": bool(getattr(getattr(ctx, "coord", None), "is_paused", lambda: False)()),
+                "overThr": over_thr,
             }
             try:
                 import threading as _th

@@ -41,6 +41,7 @@
         try { window.updateAgentCount && window.updateAgentCount(); } catch (_) {}
         try { window.refreshPriorityStatuses && window.refreshPriorityStatuses(); } catch (_) {}
         try { window.refreshOfficialBase && window.refreshOfficialBase(); } catch (_) {}
+        try { window.refreshMemBadge && window.refreshMemBadge(false); } catch (_) {}
         try { window.refreshAnalyticsIfVisible && window.refreshAnalyticsIfVisible(); } catch (_) {}
         try { window.refreshDBInfoIfVisible && window.refreshDBInfoIfVisible(); } catch (_) {}
         try { window.refreshThreadsIfVisible && window.refreshThreadsIfVisible(); } catch (_) {}

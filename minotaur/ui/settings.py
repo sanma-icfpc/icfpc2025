@@ -23,12 +23,19 @@ def create_settings_bp(ctx: AppCtx) -> Blueprint:
                 lg = request.form.get("LOG_DIR")
                 if lg is not None:
                     ctx.s.log_dir = resolve_under_base(lg)
+                rr = request.form.get("RSS_REBOOT_MB")
+                if rr is not None:
+                    try:
+                        ctx.s.rss_reboot_mb = int(rr)
+                    except Exception:
+                        pass
                 save_persisted_settings(
                     ctx.s.settings_file,
                     {
                         "OFFICIAL_BASE": ctx.s.official_base,
                         "TRIAL_TTL_SEC": ctx.s.trial_ttl_sec,
                         "LOG_DIR": ctx.s.log_dir,
+                        "RSS_REBOOT_MB": ctx.s.rss_reboot_mb,
                     },
                 )
             except Exception:
@@ -44,7 +51,7 @@ def create_settings_bp(ctx: AppCtx) -> Blueprint:
             official_base=ctx.s.official_base,
             trial_ttl_sec=ctx.s.trial_ttl_sec,
             log_dir=ctx.s.log_dir,
+            rss_reboot_mb=ctx.s.rss_reboot_mb,
         )
 
     return bp
-

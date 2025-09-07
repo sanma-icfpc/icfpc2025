@@ -55,6 +55,7 @@
         <div class="text-sm text-gray-600 flex items-center space-x-2">
           <span>🤖</span>
           <span id="agent-count" class="font-mono">0</span>
+          <span id="mem-badge" class="badge badge-success ml-2" title="Process memory">—</span>
           <span id="sse-status" class="badge badge-offline ml-2">🔴 OFFLINE</span>
           <span class="ml-4">Auto Update</span>
           <button id="auto-toggle" class="auto-switch on" role="switch" aria-checked="true" aria-label="Auto Update" onclick="toggleAutoUpdate()"><span class="knob"></span></button>
@@ -283,6 +284,34 @@
         .then(j => { const el = document.getElementById('agent-count'); if (el && typeof j.n === 'number') el.textContent = j.n; })
         .catch(() => {});
     }
+    // Throttled memory badge refresh
+    let _memBadgeLast = 0;
+    const _memBadgeMinInterval = 60000; // 60s
+    function refreshMemBadge(force) {
+      try {
+        if (document.hidden && !force) return;
+        const now = Date.now();
+        if (!force && (now - _memBadgeLast) < _memBadgeMinInterval) return;
+        _memBadgeLast = now;
+        fetch('/minotaur/mem_info', { credentials: 'same-origin' })
+          .then(r => r.json())
+          .then(j => {
+            const el = document.getElementById('mem-badge');
+            if (!el) return;
+            const rss = (typeof j.rssMB === 'number') ? j.rssMB : null;
+            const thr = (typeof j.rssThrMB === 'number') ? j.rssThrMB : 0;
+            const draining = !!j.draining;
+            const over = !!j.overThr;
+            const rssTxt = (rss != null) ? Math.round(rss) + ' MB' : '—';
+            const thrTxt = (thr > 0) ? (thr + ' MB') : 'off';
+            el.textContent = rssTxt + ' (threshold ' + thrTxt + ')';
+            const isRed = draining || over;
+            el.className = 'badge ' + (isRed ? 'badge-offline' : 'badge-success') + ' ml-2';
+            el.title = isRed ? (draining ? 'Draining: termination requested' : 'Over memory threshold') : 'Memory usage';
+          })
+          .catch(() => {});
+      } catch (_) {}
+    }
     function refreshOfficialBase() {
       try {
         fetch('/minotaur/official_base', { credentials: 'same-origin' })
@@ -317,7 +346,7 @@
               loadStatus({ skipRecent: true });
             }
           } catch (_) {}
-          updateAgentCount(); refreshPriorityStatuses(); refreshOfficialBase();
+          updateAgentCount(); refreshPriorityStatuses(); refreshOfficialBase(); refreshMemBadge(false);
           try { if (typeof window.refreshAnalyticsIfVisible === 'function') window.refreshAnalyticsIfVisible(); } catch (_) {}
           try { if (typeof window.refreshDBInfoIfVisible === 'function') window.refreshDBInfoIfVisible(); } catch (_) {}
           try { if (typeof window.refreshThreadsIfVisible === 'function') window.refreshThreadsIfVisible(); } catch (_) {}
@@ -345,6 +374,16 @@
         }
       } catch (_) {}
     });
+    // Periodic mem badge update (lightweight)
+    (function scheduleMemBadge(){
+      const tick = function(){ try { refreshMemBadge(false); } catch(_) {} };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function(){ setInterval(tick, 20000); tick(); }, { once: true });
+      } else {
+        setInterval(tick, 20000);
+        tick();
+      }
+    })();
 
     function updateAutoToggleUI() {
       const t = document.getElementById('auto-toggle');
@@ -678,6 +717,7 @@
     }
     // expose for other bundles
     window.refreshOfficialBase = refreshOfficialBase;
+    window.refreshMemBadge = refreshMemBadge;
     function setSSEStatus(isOnline) {
       const el = document.getElementById('sse-status');
       if (!el) return;

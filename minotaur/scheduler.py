@@ -28,6 +28,7 @@ class Coordinator:
         self.conn = conn
         self._stop = threading.Event()
         self._tick = 0
+        self._paused_grants = False
         # When a persistent pin exists but the agent has nothing queued,
         # briefly hold grants to allow the pinned agent to enqueue again.
         # This reduces races where others get granted between back-to-back
@@ -47,11 +48,19 @@ class Coordinator:
         while not self._stop.is_set():
             try:
                 self._sweep_timeouts()
-                self._grant_if_idle()
+                if not self._paused_grants:
+                    self._grant_if_idle()
             except Exception:
                 # swallow; keep sweeping
                 pass
             time.sleep(1.0)
+
+    # Drain control: pause/resume granting new runs
+    def pause_grants(self, paused: bool) -> None:
+        self._paused_grants = bool(paused)
+
+    def is_paused(self) -> bool:
+        return bool(self._paused_grants)
 
     # Grant queued trial if no running exists
     def _grant_if_idle(self) -> None:

@@ -17,6 +17,11 @@
     </div>
   </div>
   <div>
+    <label class="block text-sm font-medium text-gray-800">自動再起動のメモリしきい値（RSS_REBOOT_MB, MB）</label>
+    <input class="w-full border rounded p-2 mt-1" type="number" min="0" step="1" name="RSS_REBOOT_MB" value="{{ rss_reboot_mb }}" />
+    <p class="text-xs text-gray-500 mt-1">RSS がこの値（MB）を超えた後、実行中の試行が無いタイミングでプロセスを終了します（0 で無効）。外部の監視・再起動により自動的に再起動される想定です。デフォルト: 600MB。</p>
+  </div>
+  <div>
     <label class="block text-sm font-medium text-gray-800">トライアルのリース秒数（TRIAL_TTL_SEC）</label>
     <input class="w-full border rounded p-2 mt-1" type="number" min="10" step="1" name="TRIAL_TTL_SEC" value="{{ trial_ttl_sec }}" />
     <p class="text-xs text-gray-500 mt-1">現在実行中の試行が占有できる最大秒数。/explore と /guess で更新され、タイムアウトで解放されます。</p>

@@ -51,6 +51,11 @@ if persist:
             s.trial_ttl_sec = int(persist.get("TRIAL_TTL_SEC", s.trial_ttl_sec))
         if "LOG_DIR" in persist:
             s.log_dir = resolve_under_base(persist.get("LOG_DIR") or s.log_dir)
+        if "RSS_REBOOT_MB" in persist:
+            try:
+                s.rss_reboot_mb = int(persist.get("RSS_REBOOT_MB", s.rss_reboot_mb))
+            except Exception:
+                pass
         _log(f"[boot] loaded settings from YAML {s.settings_file}: keys={list(persist.keys())}")
     except Exception:
         _log(f"[boot] failed to apply YAML settings from {s.settings_file}")
@@ -85,6 +90,8 @@ _ui_guard = BasicAuthGuard(users)
 bus = EventBus()
 coord.on_change = lambda ev: bus.emit(ev)
 coord.start()
+
+# (moved) Memory-based graceful reboot watcher is started after ctx is created
 
 # Access logging (directional)
 AGENT_ENDPOINTS = {"/select", "/explore", "/guess"}
@@ -143,6 +150,16 @@ register_ui_routes(app, ctx)
 register_select_routes(app, ctx)
 register_api_routes(app, ctx)
 register_priority_routes(app, ctx)
+
+# Start Memory-based graceful reboot watcher (after ctx is available)
+try:
+    from .rebooter import MemoryRebooter
+
+    _rebooter = MemoryRebooter(ctx)
+    _rebooter.start()
+    _log(f"[boot] rss_reboot_mb={s.rss_reboot_mb}")
+except Exception:
+    _log("[boot] failed to start MemoryRebooter")
 
 
 @app.route("/minotaur/healthz")

@@ -68,6 +68,19 @@ def register_select_routes(app, ctx: AppCtx) -> None:
         return int(ctx.s.base_priority_default)
     @app.route("/select", methods=["POST"])
     def select_route():
+        # If scheduler is in drain mode (e.g., memory threshold crossed),
+        # stop accepting new selections to avoid building a queue that will
+        # be interrupted on restart. Let clients retry soon.
+        try:
+            if hasattr(ctx, 'coord') and getattr(ctx.coord, 'is_paused', None) and ctx.coord.is_paused():
+                resp = make_response((jsonify({"error": "draining", "message": "server is draining; retry later"}), 503))
+                try:
+                    resp.headers['Retry-After'] = '60'
+                except Exception:
+                    pass
+                return resp
+        except Exception:
+            pass
         body = request.get_json(silent=True) or {}
         problem = body.get("problemName")
         if not isinstance(problem, str) or not problem:
@@ -112,7 +125,13 @@ def register_select_routes(app, ctx: AppCtx) -> None:
         ctx.bus.emit("enqueue")
 
         # Preemption: if incoming name matches the running one, preempt; otherwise do not preempt
+        # When draining, skip preemption to preserve current running until finish
         if agent_name:
+            try:
+                if hasattr(ctx, 'coord') and getattr(ctx.coord, 'is_paused', None) and ctx.coord.is_paused():
+                    agent_name = None  # disable preemption path
+            except Exception:
+                pass
             preempt_giveup = False
             preempt_grant = False
             try:
