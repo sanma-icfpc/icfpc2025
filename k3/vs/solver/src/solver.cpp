@@ -345,6 +345,23 @@ struct GuessMap {
         connections.assign(edge_pairs.begin(), edge_pairs.end());
     }
 
+    GuessMap(const std::vector<int>& labels, const std::vector<std::array<Port, 6>>& to, int s) {
+        rooms = labels;
+        startingRoom = s; // fixed
+        std::set<Connection> edge_pairs; // (r1, d1, r2, d2)
+        const int n = (int)rooms.size();
+        for (int r1 = 0; r1 < n; r1++) {
+            for (int d1 = 0; d1 < 6; d1++) {
+                Port p1(r1, d1), p2(to[r1][d1]);
+                if (p1 > p2) continue;
+                Connection conn(p1, p2);
+                assert(!edge_pairs.count(conn));
+                edge_pairs.insert(conn);
+            }
+        }
+        connections.assign(edge_pairs.begin(), edge_pairs.end());
+    }
+
     Labyrinth to_labyrinth() const {
         int n = (int)rooms.size();
         if (n <= 0) throw std::runtime_error("rooms empty");
@@ -433,8 +450,8 @@ Labyrinth generate_random_labyrinth(int n_rooms, std::optional<uint64_t> seed = 
     Labyrinth L;
 
     L.labels.resize(n_rooms);
-    for (int i = 0; i < n_rooms; ++i) L.labels[i] = (int)(engine() % 4); 
-    //std::shuffle(L.labels.begin(), L.labels.end(), engine); // 均等ラベル
+    for (int i = 0; i < n_rooms; ++i) L.labels[i] = (int)(i % 4); 
+    std::shuffle(L.labels.begin(), L.labels.end(), engine); // 均等ラベル
 
     // すべてのポート (r,d) を列挙
     std::vector<Port> ports; ports.reserve((size_t)n_rooms * 6);
@@ -492,19 +509,20 @@ Labyrinth generate_random_labyrinth(int n_rooms, std::optional<uint64_t> seed = 
 }
 
 
-namespace NLocalSearch {
+// NOTE:
+// 
+// discord のログから、ラベルは
+// ```
+//     labels = [i % 4 for i in range(n_rooms)]
+//     rng.shuffle(labels)
+// ```
+// のように生成されると仮定する。
+
+namespace NLocalSearch { // 部屋数固定ならラベルの組み換えは不要
 
     struct Delta {
 
-        enum struct Type { LABEL, TWO_SWITCH };
-
-        Type type;
         bool ok;
-
-        // for LABEL
-        int a, b; // TODO: rename
-
-        // for TWO_SWITCH
         std::array<int, 4> idx;
         std::array<int, 4> oldv;
 
@@ -520,13 +538,14 @@ namespace NLocalSearch {
     };
 
     struct State {
-        
+
         std::vector<int> labels;
         std::vector<int> to;
 
         State() = default;
         State(const Labyrinth& L) : labels(L.labels), to(labels.size() * 6) {
             const int n = (int)labels.size();
+            for (int i = 0; i < n; i++) labels[i] = i % 4; // fixed labels
             for (int r = 0; r < n; r++) {
                 for (int d = 0; d < 6; d++) {
                     int p = r * 6 + d, q = L.to[r][d].to_int();
@@ -535,32 +554,9 @@ namespace NLocalSearch {
             }
         }
 
-        Delta modify_label(int idx, int to_label) {
-            assert(1 <= idx && idx < (int)labels.size()); // start is fixed
-            assert(0 <= to_label && to_label < 4);
-            assert(labels[idx] != to_label);
-            Delta d; d.type = Delta::Type::LABEL;
-            int prev = labels[idx];
-            labels[idx] = to_label;
-            // return (idx, prev)
-            d.ok = true;
-            d.a = idx;
-            d.b = prev;
-            return d;
-        }
-
-        Delta modify_random_label(Xorshift& r) {
-            const int n = (int)labels.size();
-            int idx = r.next_u32(n - 1) + 1, to_label;
-            do {
-                to_label = r.next_u32(4);
-            } while (to_label == labels[idx]);
-            return modify_label(idx, to_label);
-        }
-
         Delta modify_two_switch(int p, int q, bool allow_self_loop) {
             // p, q: compressed port
-            Delta d; d.type = Delta::Type::TWO_SWITCH; d.ok = false;
+            Delta d; d.ok = false;
             const int N = (int)to.size(); // nrooms*6
             assert(p < N && q < N);
             assert(p != q);
@@ -611,27 +607,16 @@ namespace NLocalSearch {
         }
 
         Delta modify_random(Xorshift& r, bool allow_self_loop) {
-            if (r.next_u32(2)) {
-                return modify_random_label(r);
-            }
             return modify_random_two_switch(r, allow_self_loop);
         }
 
         void undo(const Delta& d) {
-            if (d.type == Delta::Type::LABEL) {
-                modify_label(d.a, d.b);
-            }
-            else if (d.type == Delta::Type::TWO_SWITCH) {
-                d.undo_vec(to);
-            }
-            else {
-                assert(false);
-            }
+            d.undo_vec(to);
         }
 
         int calc_diff(const std::vector<int>& plan, const std::vector<int>& target_labels) const {
             assert(plan.size() + 1 == target_labels.size());
-            int cur_room = 0; // start is fixed
+            int cur_room = target_labels[0]; // start is fixed
             assert(target_labels.front() == labels[cur_room]);
             int diff = 0;
             for (int i = 1; i < (int)target_labels.size(); ++i) {
@@ -670,7 +655,7 @@ namespace NLocalSearch {
                 assert(r3 == r && d3 == d);  // 無向対称性
             }
         }
-                
+
         return L;
     }
 
@@ -679,11 +664,12 @@ namespace NLocalSearch {
         const std::vector<int>& plan,
         const std::vector<int>& target_labels
     ) {
-        constexpr int multistart_iter = 100;
-        constexpr int innerloop_iter = 1000000;
-        constexpr double start_temp = 1.0;
+        constexpr int multistart_iter = 10;
+        constexpr int innerloop_iter = 30000000;
+        constexpr double start_temp = 2.0;
         constexpr double end_temp = 0.01;
         const bool allow_self_loop = true;
+        const bool allow_kick = false;
 
         Xorshift rnd;
 
@@ -697,13 +683,15 @@ namespace NLocalSearch {
             DUMPOUT << format("--- trial %3d begin ---", trial) << std::endl;
 
             auto L = generate_random_labyrinth(num_rooms, rnd.next_u64());
-            L.labels[0] = target_labels[0]; // 出発地点を 0 とし、そのラベルは固定
 
             State state(L); // Labyrinth -> State
             int cost = state.calc_diff(plan, target_labels);
 
             State best_state(state);
             int min_cost = cost;
+
+            int kick_cost = cost;
+            int kick_count = 0;
 
             DUMPOUT << format("initial cost: %d", cost) << std::endl;
 
@@ -726,6 +714,24 @@ namespace NLocalSearch {
                 else {
                     state.undo(delta);
                 }
+
+                if (allow_kick) {
+                    if (chmin(kick_cost, cost)) kick_count = 0;
+                    else kick_count++;
+
+                    if (kick_count >= 1000000) {
+                        debug("kick");
+                        kick_cost = cost;
+                        kick_count = 0;
+
+                        for (int i = 0; i < 3; i++) state.modify_random(rnd, allow_self_loop);
+                        cost = state.calc_diff(plan, target_labels);
+                    }
+                }
+
+                if (!(step & 0xFFFFF)) {
+                    DUMPOUT << format("step=%10d, min_cost=%4d, cost=%4d", step, min_cost, cost) << std::endl;
+                }
             }
             DUMPOUT << format("step=%10d, min_cost=%4d, cost=%4d", step, min_cost, cost) << std::endl;
 
@@ -740,8 +746,113 @@ namespace NLocalSearch {
 
         DUMPOUT << format("num trial: %3d, global min cost: %4d", trial, global_min_cost) << std::endl;
 
-        GuessMap gm(to_labyrinth(global_best_state));
+        auto L = to_labyrinth(global_best_state);
+        GuessMap gm(L.labels, L.to, target_labels[0]);
         return gm;
+    }
+
+}
+
+namespace NDFS {
+
+    bool update_port(Port& p, int r, int d) {
+        if (p.room == -1) {
+            assert(p.door == -1);
+            p = { r, d };
+            return true;
+        }
+        assert(p.room == r && p.door == d);
+        return false;
+    }
+
+    bool update_label(std::vector<int>& labels, int r, int l) {
+        if (labels[r] == -1) {
+            labels[r] = l;
+            return true;
+        }
+        assert(labels[r] == l);
+        return false;
+    }
+
+    struct DFS {
+        // ラベル数固定ならば、部屋 id の対応付けはこちらで決め打ちしてよいはず
+
+        const int num_rooms;
+        const std::vector<int> plan;
+        const std::vector<int> target_labels;
+
+        std::vector<int> labels;
+        std::vector<std::array<Port, 6>> to;
+
+        int best_depth = 0;
+        size_t count_rec_called = 0;
+
+        DFS(
+            const int num_rooms_,
+            const std::vector<int>& plan_,
+            const std::vector<int>& target_labels_
+        ) : num_rooms(num_rooms_), plan(plan_), target_labels(target_labels_)
+        {
+            labels.resize(num_rooms);
+            for (int i = 0; i < num_rooms; i++) labels[i] = i % 4; // fixed labels
+            to.resize(num_rooms);
+            for (auto& v : to) v.fill(Port(-1, -1));
+        }
+
+        bool rec(int room, int depth) {
+            count_rec_called++;
+            if (chmax(best_depth, depth)) {
+                debug(count_rec_called, best_depth);
+            }
+            if (depth == (int)plan.size()) {
+                debug("finish");
+                return true;
+            }
+            const int num_rooms = (int)labels.size();
+            const int target_label = target_labels[depth + 1];
+            int door = plan[depth];
+            if (to[room][door].room == -1) { // 行先未定
+                assert(to[room][door].door == -1);
+                for (int nroom = target_label; nroom < num_rooms; nroom += 4) { // ラベルは周期 4 で繰り返す
+                    assert(labels[nroom] == target_label);
+                    for (int ndoor = 0; ndoor < 6; ndoor++) {
+                        if (to[nroom][ndoor].room != -1 && (to[nroom][ndoor].room != room || to[nroom][ndoor].door != door)) continue; // 双方向性違反
+                        // (r,d) <-> (nr,nd) を接続
+                        to[room][door] = { nroom, ndoor };
+                        bool dest_port_updated = update_port(to[nroom][ndoor], room, door);
+                        if (rec(nroom, depth + 1)) return true;
+                        if (dest_port_updated) to[nroom][ndoor] = { -1, -1 };
+                        to[room][door] = { -1, -1 };
+                    }
+                }
+            }
+            else {
+                const auto& [nr, nd] = to[room][door];
+                assert(nd != -1);
+                assert(labels[nr] != -1); // 行ったことがあるならラベルも既に決めてあるはず
+                if (labels[nr] == target_label) { // valid
+                    if (rec(nr, depth + 1)) return true;
+                }
+            }
+            return false;
+        }
+
+        GuessMap solve() {
+            int s = target_labels[0];
+            rec(s, 0);
+            debug(count_rec_called);
+            return GuessMap(labels, to, s);
+        }
+
+    };
+
+    GuessMap solve_dfs(
+        const int num_rooms,
+        const std::vector<int>& plan,
+        const std::vector<int>& target_labels
+    ) {
+        DFS solver(num_rooms, plan, target_labels);
+        return solver.solve();
     }
 
 }
@@ -756,7 +867,7 @@ int main() {
 
     Timer timer;
 
-    std::mt19937_64 engine(0);
+    std::mt19937_64 engine((uint64_t)std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
     const int num_rooms = [&]() {
         std::string line;
@@ -776,9 +887,9 @@ int main() {
             p.push_back(char(i % 6) + '0');
         }
         std::shuffle(p.begin(), p.end(), engine);
-        debug(p);
         return p;
     } ();
+    debug(plan_str);
     
     // send query
     std::cout << 1 << std::endl; // single plan
@@ -799,9 +910,9 @@ int main() {
 
     std::vector<int> plan;
     for (char ch : plan_str) plan.push_back(ch - '0');
-    debug(plan);
 
     auto gm = NLocalSearch::multistart_annealing(num_rooms, plan, target_labels);
+    //auto gm = NDFS::solve_dfs(num_rooms, plan, target_labels);
     std::cout << gm.to_json() << std::endl;
 
     debug(timer.elapsed_ms());

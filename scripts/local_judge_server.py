@@ -102,7 +102,9 @@ class Labyrinth:
 
 def generate_random_labyrinth(n_rooms: int, seed: Optional[int]) -> Labyrinth:
     rng = random.Random(seed if seed is not None else time.time_ns())
-    labels = [rng.randrange(4) for _ in range(n_rooms)]
+    labels = [i % 4 for i in range(n_rooms)]
+    rng.shuffle(labels)
+    
     start = 0
 
     # Enumerate all ports and shuffle
