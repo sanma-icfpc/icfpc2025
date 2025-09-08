@@ -33,12 +33,39 @@ app = Flask(__name__)
 s: Settings = load_settings_from_env()
 
 
-def _ts() -> str:
-    return utcnow_str()
+def _hms() -> str:
+    try:
+        # Keep UTC for consistency with previous logs, shorten to HH:MM:SS
+        return datetime.now(timezone.utc).strftime("%H:%M:%S")
+    except Exception:
+        try:
+            return datetime.utcnow().strftime("%H:%M:%S")
+        except Exception:
+            return "--:--:--"
 
 
 def _log(msg: str) -> None:
-    print(f"[{_ts()}] {msg}", flush=True)
+    print(f"[{_hms()}] {msg}", flush=True)
+
+
+def _fmt_ip(ip: str | None, width: int = 15) -> str:
+    try:
+        s = (ip or "-")
+        # Trim from the left if longer than width (e.g., IPv6), pad left to align
+        if len(s) > width:
+            s = s[-width:]
+        return s.rjust(width)
+    except Exception:
+        return (ip or "-").rjust(width)
+
+
+def _identity_from_headers() -> str:
+    try:
+        name = request.headers.get("X-Agent-Name") or "*"
+        aid = request.headers.get("X-Agent-ID") or "-"
+        return f"{name}({aid})"
+    except Exception:
+        return "* (-)"
 
 
 # Apply persisted YAML settings (if present)
@@ -115,16 +142,21 @@ def _body_snippet() -> str:
 @app.before_request
 def _log_request() -> None:
     try:
-        prefix = "[webui -> minotaur]"
+        # Build common parts
+        rip = request.remote_addr or "-"
+        ipb = f"[{_fmt_ip(rip)}]"
+        ident = _identity_from_headers()
+        method_path = f"{request.method} {request.path}"
+        # Direction icon
         if request.path in AGENT_ENDPOINTS:
-            aid = request.headers.get("X-Agent-ID") or "-"
-            git = request.headers.get("X-Agent-Git") or "-"
-            prefix = f"[agent -> minotaur] agent_id={aid} git={git}"
+            prefix = "[🤖->🐂]"
+        else:
+            prefix = "[👤->🐂]"
         if request.path == "/minotaur/agent_count":
             return
         b = _body_snippet()
         extra = f" body={b}" if b else ""
-        _log(f"{prefix} {request.method} {request.path}{extra}")
+        _log(f"{ipb} {prefix} [{ident}] {method_path}{extra}")
     except Exception:
         pass
 
@@ -134,10 +166,15 @@ def _log_response(resp: Response):
     try:
         if request.path == "/minotaur/agent_count":
             return resp
-        prefix = "[webui <- minotaur]"
+        rip = request.remote_addr or "-"
+        ipb = f"[{_fmt_ip(rip)}]"
+        ident = _identity_from_headers()
+        method_path = f"{request.method} {request.path}"
         if request.path in AGENT_ENDPOINTS:
-            prefix = "[agent <- minotaur]"
-        _log(f"{prefix} {request.method} {request.path} -> {resp.status_code}")
+            prefix = "[🐂->🤖]"
+        else:
+            prefix = "[🐂->👤]"
+        _log(f"{ipb} {prefix} [{ident}] {method_path} -> {resp.status_code}")
     except Exception:
         pass
     return resp

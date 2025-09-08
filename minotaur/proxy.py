@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from typing import Any, Dict, Optional
 
 import requests
@@ -61,8 +62,11 @@ class UpstreamProxy:
             body2["id"] = self.s.icfp_id
         try:
             aid = (meta or {}).get("agent_id")
-            git = (meta or {}).get("git_sha")
-            print(f"[{_ts()}] [minotaur -> upstream] POST {url} sid={session_id} agent_id={aid or '-'} git={git or '-'} body={body2}", flush=True)
+            aname = (meta or {}).get("agent_name") or "*"
+            host = urlparse(url).hostname or "upstream"
+            ipb = f"[{_fmt_ip(host)}]"
+            ident = f"{aname}({aid or '-'})"
+            print(f"[{_hms()}] {ipb} [🐂->⚖️] [{ident}] POST {path} body={body2}", flush=True)
         except Exception:
             pass
         resp = sess.post(url, json=body2, timeout=timeout)
@@ -72,7 +76,12 @@ class UpstreamProxy:
         except Exception:
             data = {"_raw": text}
         try:
-            print(f"[{_ts()}] [upstream -> minotaur] {path} {resp.status_code} body={data}", flush=True)
+            host = urlparse(url).hostname or "upstream"
+            ipb = f"[{_fmt_ip(host)}]"
+            aid = (meta or {}).get("agent_id")
+            aname = (meta or {}).get("agent_name") or "*"
+            ident = f"{aname}({aid or '-'})"
+            print(f"[{_hms()}] {ipb} [⚖️->🐂] [{ident}] POST {path} -> {resp.status_code} body={data}", flush=True)
         except Exception:
             pass
         self._log("fwd" if resp.ok else "fwd_err", path, session_id, resp.status_code, body2, data, meta)
@@ -86,5 +95,21 @@ class UpstreamError(Exception):
         super().__init__(f"upstream {status}")
         self.status = status
         self.payload = payload
-def _ts() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+def _hms() -> str:
+    try:
+        return datetime.now(timezone.utc).strftime("%H:%M:%S")
+    except Exception:
+        try:
+            return datetime.utcnow().strftime("%H:%M:%S")
+        except Exception:
+            return "--:--:--"
+
+
+def _fmt_ip(ip: str | None, width: int = 15) -> str:
+    try:
+        s = (ip or "-")
+        if len(s) > width:
+            s = s[-width:]
+        return s.rjust(width)
+    except Exception:
+        return (ip or "-").rjust(width)

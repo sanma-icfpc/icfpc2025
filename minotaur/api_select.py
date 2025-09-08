@@ -252,7 +252,7 @@ def register_select_routes(app, ctx: AppCtx) -> None:
             ctx.bus.emit("change")
         try:
             out = ctx.proxy.forward(
-                "/select", started, {"problemName": problem, "id": "ignored"}, meta={"agent_id": agent_id, "git_sha": git_sha}
+                "/select", started, {"problemName": problem, "id": "ignored"}, meta={"agent_id": agent_id, "agent_name": agent_name, "git_sha": git_sha}
             )
         except UpstreamError as ue:
             with ctx.conn:

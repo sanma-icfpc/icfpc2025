@@ -80,7 +80,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
             _log_ch_req(ctx, ch_id, "explore", rk, "to_upstream", 0, body, {})
             ctx.bus.emit("change")
         try:
-            out = ctx.proxy.forward("/explore", sid, body, state, meta={"agent_id": agent_id, "git_sha": git_sha})
+            out = ctx.proxy.forward("/explore", sid, body, state, meta={"agent_id": agent_id, "agent_name": agent_name, "git_sha": git_sha})
         except UpstreamError as ue:
             if ch_id is not None:
                 _log_ch_req(ctx, ch_id, "explore", rk, "from_upstream", int(ue.status), body, ue.payload)
@@ -165,7 +165,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
             _log_ch_req(ctx, ch_id, "guess", rk, "to_upstream", 0, body, {})
             ctx.bus.emit("change")
         try:
-            out = ctx.proxy.forward("/guess", sid, body, meta={"agent_id": agent_id, "git_sha": git_sha})
+            out = ctx.proxy.forward("/guess", sid, body, meta={"agent_id": agent_id, "agent_name": agent_name, "git_sha": git_sha})
         except UpstreamError as ue:
             if ch_id is not None:
                 _log_ch_req(ctx, ch_id, "guess", rk, "from_upstream", int(ue.status), body, ue.payload)

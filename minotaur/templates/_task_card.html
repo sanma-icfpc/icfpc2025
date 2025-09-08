@@ -16,7 +16,7 @@
           <span class="text-gray-500">problem:</span>
           <span class="truncate">{{ t.problem_id }}</span>
           <span class="ml-3 text-gray-500">agent:</span>
-          {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
+          <span class="font-mono">[{{ t.agent_name or '*' }}({{ t.agent_id or '-' }})]</span>
           {# Inline relative time next to agent identity #}
           {% if is_queued and t.enqueued_at %}
             <span class="ml-3 text-gray-500">enqueued:</span>
