@@ -98,6 +98,158 @@ def make_single_plan(n_rooms: int) -> str:
         plan_digits.extend(base[:remain])
     return "".join(str(d) for d in plan_digits)
 
+def _infer_label_transition(plan: str, observed: List[int], K: int = 6) -> List[List[Optional[int]]]:
+    """trans[l][d] = next_label(l,d). 矛盾があれば ValueError."""
+    assert len(observed) == len(plan) + 1
+    trans: List[List[Optional[int]]] = [[None]*K for _ in range(4)]
+    for t, ch in enumerate(plan):
+        l = observed[t]
+        d = ord(ch) - 48  # '0'..'5'
+        nl = observed[t+1]
+        if trans[l][d] is None:
+            trans[l][d] = nl
+        elif trans[l][d] != nl:
+            raise ValueError(f"label transition conflict at (l={l},d={d}): {trans[l][d]} vs {nl}")
+    # 未観測の (l,d) は None のまま（制約は掛けない）
+    return trans
+
+def _add_label_cardinality(model: cp_model.CpModel, L, n_rooms: int, hard: bool) -> None:
+    """L の多重度拘束。hard=True なら exact、False なら幅±1の緩い範囲。"""
+    # 目標分布（n=18 -> [5,5,4,4] など）
+    base = n_rooms // 4
+    extra = n_rooms % 4
+    target = [base + (1 if i < extra else 0) for i in range(4)]
+
+    # Bool 指示変数 B[r][l] = (L[r]==l)
+    B = [[model.NewBoolVar(f"B[{r}][{l}]") for l in range(4)] for r in range(n_rooms)]
+    for r in range(n_rooms):
+        # ちょうど1つのラベル
+        model.Add(sum(B[r][l] for l in range(4)) == 1)
+        for l in range(4):
+            model.Add(L[r] == l).OnlyEnforceIf(B[r][l])
+            model.Add(L[r] != l).OnlyEnforceIf(B[r][l].Not())
+
+    # 各ラベルの個数
+    for l in range(4):
+        cnt = sum(B[r][l] for r in range(n_rooms))
+        if hard:
+            model.Add(cnt == target[l])
+        else:
+            # 緩い上下界（±1 くらい）。必要なら幅を調整
+            model.Add(cnt >= max(0, target[l]-1))
+            model.Add(cnt <= min(n_rooms, target[l]+1))
+
+
+def solve_cpsat_guess_map_fast(n_rooms: int, plan: str, observed: List[int]) -> Dict:
+    """
+    /explore の観測 (observed) に一致する地図を CP-SAT で復元。
+    速度向上版（Element のみで添字、involution、割当回数の事前固定、除算/剰余のチャンネリング）。
+    戻り値は /guess にそのまま投げられる dict。
+    """
+    assert len(observed) == len(plan) + 1
+    K = 6
+    P = n_rooms * K
+    T = len(plan)
+
+    model = cp_model.CpModel()
+
+    # ---------- 変数 ----------
+    # ポート写像（involution）
+    F = [model.NewIntVar(0, P - 1, f"F[{p}]") for p in range(P)]
+
+    # 状態列（部屋）と、その遷移で到着側の扉
+    S = [model.NewIntVar(0, n_rooms - 1, f"S[{t}]") for t in range(T + 1)]
+    R = [model.NewIntVar(0, K - 1, f"R[{t}]") for t in range(T)]
+
+    # ラベル
+    L = [model.NewIntVar(0, 3, f"L[{r}]") for r in range(n_rooms)]
+
+    # ---------- 基本拘束 ----------
+    # 開始部屋は 0。開始ラベルは観測の先頭と一致
+    model.Add(S[0] == 0)
+    model.Add(L[0] == observed[0])
+
+    # 観測ラベル整合: L[S[t]] == observed[t]
+    for t in range(T + 1):
+        lt = model.NewIntVar(0, 3, f"lt[{t}]")
+        model.AddElement(S[t], L, lt)
+        model.Add(lt == observed[t])
+
+    # 遷移: p_t = 6*S[t] + a_t, q_t = F[p_t], S[t+1] = q_t // 6, R[t] = q_t % 6
+    for t in range(T):
+        a_t = int(plan[t])
+        p_t = model.NewIntVar(0, P - 1, f"p[{t}]")
+        q_t = model.NewIntVar(0, P - 1, f"q[{t}]")
+        model.Add(p_t == S[t] * K + a_t)
+        model.AddElement(p_t, F, q_t)
+        model.AddDivisionEquality(S[t + 1], q_t, K)   # S[t+1] = q_t // 6
+        model.AddModuloEquality(R[t], q_t, K)         # R[t]   = q_t % 6
+
+    # involution: F[F[p]] == p
+    # （Python 版は AddElement(index, array, target) を使う）
+    for p in range(P):
+        model.AddElement(F[p], F, p)
+
+    # ---------- ラベル個数の事前固定（生成規則 i%4 のシャッフル想定） ----------
+    # n_rooms を 4 で割った商/余りから各ラベルの個数を確定させる
+    base = n_rooms // 4
+    extra = n_rooms % 4
+    target_count = [base + (1 if l < extra else 0) for l in range(4)]
+
+    # Bool 配列 B[r][l] = (L[r] == l)
+    B = [[model.NewBoolVar(f"B[{r}][{l}]") for l in range(4)] for r in range(n_rooms)]
+    for r in range(n_rooms):
+        # チャンネリング：B[r][l] <=> (L[r] == l)
+        for l in range(4):
+            model.Add(L[r] == l).OnlyEnforceIf(B[r][l])
+            model.Add(L[r] != l).OnlyEnforceIf(B[r][l].Not())
+        # 各部屋はちょうど1ラベル
+        model.Add(sum(B[r][l] for l in range(4)) == 1)
+
+    # ラベル総数を固定
+    for l in range(4):
+        model.Add(sum(B[r][l] for r in range(n_rooms)) == target_count[l])
+
+    # ---------- 求解 ----------
+    solver = cp_model.CpSolver()
+    # 実運用向けパラメータ（適宜調整）
+    solver.parameters.max_time_in_seconds = 600.0
+    solver.parameters.num_search_workers = 6
+    solver.parameters.cp_model_presolve = True
+    solver.parameters.symmetry_level = 2
+    # 早期に実行可能解が得られたら返す
+    solver.parameters.optimize_with_core = False
+
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise RuntimeError(f"CP-SAT no solution: status={solver.StatusName(status)}")
+
+    # ---------- 解の復元 ----------
+    labels = [solver.Value(L[r]) for r in range(n_rooms)]
+
+    def port_of(idx: int) -> Tuple[int, int]:
+        return idx // K, idx % K
+
+    connections = []
+    seen = set()
+    for p in range(P):
+        q = solver.Value(F[p])
+        a, b = (p, q) if p <= q else (q, p)
+        if (a, b) in seen:
+            continue
+        seen.add((a, b))
+        r1, d1 = port_of(a)
+        r2, d2 = port_of(b)
+        connections.append({
+            "from": {"room": r1, "door": d1},
+            "to":   {"room": r2, "door": d2},
+        })
+
+    return {
+        "rooms": labels,
+        "startingRoom": 0,
+        "connections": connections,
+    }
 
 # -------- CP-SAT 復元 --------
 def solve_cpsat_guess_map(n_rooms: int, plan: str, observed: List[int]) -> Dict:
@@ -146,13 +298,14 @@ def solve_cpsat_guess_map(n_rooms: int, plan: str, observed: List[int]) -> Dict:
     # 目的関数は不要（可行解で十分）
     solver = cp_model.CpSolver()
     # 早めに返すチューニング（必要に応じて調整）
-    solver.parameters.max_time_in_seconds = 10.0
+    solver.parameters.max_time_in_seconds = 3600.0
     solver.parameters.num_search_workers = 8
     solver.parameters.cp_model_presolve = True
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(f"CP-SAT no solution: status={solver.StatusName(status)}")
+    print(f'status={status}')
 
     # 解の復元
     # labels
@@ -209,7 +362,7 @@ def solve_once(client: AedificiumClient, *, problem_name: str, http_timeout: Opt
     observed = results[0]
     print(f'observed={observed}', flush=True)
 
-    guess = solve_cpsat_guess_map(num_rooms, plan, observed)
+    guess = solve_cpsat_guess_map_fast(num_rooms, plan, observed)
     print(f'guess={guess}', flush=True)
 
     result = client.guess(guess)
