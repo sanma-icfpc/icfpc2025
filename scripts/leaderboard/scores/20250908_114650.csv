@@ -1,0 +1,358 @@
+timestamp,rank,teamName,teamPl,score
+20250908_114650,1,Unagi,Rust,5086
+20250908_114650,2,Purely Functional Networks,C++,5082
+20250908_114650,3,MOYOU,Rust,5076
+20250908_114650,4,omnes tuus liber sunt pertinere ad nos,OCaml and/or C++,5071
+20250908_114650,5,Spacecat,Rust,5044
+20250908_114650,6,Fixstars,"C++,Python",5042
+20250908_114650,7,powder,Haskell,5012
+20250908_114650,8,Gon The Fox,Rust,5006
+20250908_114650,9,Theoretical Hypothetical Infinite Recursive Definitions,C++,5006
+20250908_114650,10,qedfew,"Haskell, Python, Rust",5001
+20250908_114650,11,DIgital Experts,Rust,4955
+20250908_114650,12,House of Lambdas,python,4955
+20250908_114650,13,Piggyheck,"Rust, Python",4954
+20250908_114650,14,Turing Machinists,[REDACTED],4941
+20250908_114650,15,manarimo,Go,4939
+20250908_114650,16,Pegovka,C#,4939
+20250908_114650,17,Yorofuwa,Go,4915
+20250908_114650,18,WILD BASHKORT MAGES,日本語,4911
+20250908_114650,19,neoアミューズメントスペースa-cho,Rust,4875
+20250908_114650,20,chirijako,"Rust,C++,Python",4872
+20250908_114650,21,Ty chyo pyos? 3.11,Rust,4872
+20250908_114650,22,Pigimarl,Rust/Python/C++/TypeScript,4825
+20250908_114650,23,Tambourine head,OCaml,4816
+20250908_114650,24,Highlanders,python,4796
+20250908_114650,25,Lambda Quakens,Swift,4761
+20250908_114650,26,cashto,python,4745
+20250908_114650,27,negainoido,Rust,4739
+20250908_114650,28,Heuristic Artis,Rust,4704
+20250908_114650,29,Dare Ludum,Rust,4680
+20250908_114650,30,The Higher Order of Zeuxis,Python,4669
+20250908_114650,31,ARechitsky,Python,4640
+20250908_114650,32,sanma,C++,4617
+20250908_114650,33,DnDn,DnDn,4567
+20250908_114650,34,Blue Iris,"Jules, Python, maybe Rust",4562
+20250908_114650,35,SEK,Python,4475
+20250908_114650,36,idkjava,Anything but Java,4451
+20250908_114650,37,IKS,"Python, C++",4426
+20250908_114650,38,OpenMaster,"ruby,python",4401
+20250908_114650,39,TBD,rusty,4231
+20250908_114650,40,Jules's Team,Python,4227
+20250908_114650,41,A Storm of Minds,"lisp, python, java",3781
+20250908_114650,42,kumanomi,"Rust,C++",3618
+20250908_114650,43,Raging Mushrooms Team,lisp-ish with a touch of R’lyeh,3376
+20250908_114650,44,V8,[object Object],3256
+20250908_114650,45,Jules's Team,Python,3241
+20250908_114650,46,code-o-matic,"Java, Python",3189
+20250908_114650,47,traP,"C++, Rust",3141
+20250908_114650,48,xyz600,Rust,2897
+20250908_114650,49,------- PRIZE CUTOFF -------,"C++, Python",2792
+20250908_114650,50,"Snakes, Monkeys, and Two Smoking Lambdas",Python,2556
+20250908_114650,51,sonna*baka*na,C++,2546
+20250908_114650,52,A,P,2192
+20250908_114650,53,igusarov,C++,2082
+20250908_114650,54,Frictionless Bananas,C++,1876
+20250908_114650,55,ichyo,Rust,1749
+20250908_114650,56,Team Sampou,Haskell,1734
+20250908_114650,57,Bue World,Rust,1563
+20250908_114650,58,jabber.ru,OCaml,1553
+20250908_114650,59,The Blind Hen,OCaml,1548
+20250908_114650,60,The Cat is #1!!,"C#, Python",1521
+20250908_114650,61,ImportLibrary,"python, ocaml",1513
+20250908_114650,62,hikkash,Rust,1505
+20250908_114650,63,Olympia,"C#,python",1502
+20250908_114650,64,locally constant,Python,1498
+20250908_114650,65,Team 50+,"C++, Java, Python",1475
+20250908_114650,66,LILIK UniFi,"Rust, Python-C++, Pascal",1471
+20250908_114650,67,Channable & Friends,Rust,1471
+20250908_114650,68,Human Instrumentality Project,C#,1469
+20250908_114650,69,CTO,Typescript,1449
+20250908_114650,70,Jimmy C#,C#,1438
+20250908_114650,71,Zebra Infused Hamsters,Everything except LUA,1432
+20250908_114650,72,SjoerdVisscher,Haskell,1427
+20250908_114650,73,DiamondPrincess,"Haxe, Perl, C++",1425
+20250908_114650,74,taxidriver,Ruby,1393
+20250908_114650,75,killswitch,"Python,OCaml",1392
+20250908_114650,76,shim0,"Python, Rust",1387
+20250908_114650,77,uguu.org,C++,1349
+20250908_114650,78,Solo,Python,1344
+20250908_114650,79,THIRTEEN,"go,kotlin,java,rust",1338
+20250908_114650,80,M＆M's,Python,1338
+20250908_114650,81,tarstars,python,1335
+20250908_114650,82,Dis Functional,Go,1332
+20250908_114650,83,DK,Python/C++,1328
+20250908_114650,84,i_havent_touched_coding_in_3_months,rust,1297
+20250908_114650,85,ootbo,"python, etc",1297
+20250908_114650,86,Team Meh,C#,1297
+20250908_114650,87,LucasKiwi,python,1274
+20250908_114650,88,C4T BuT S4D,C+++Python,1219
+20250908_114650,89,Bottle kids!,Julia,1214
+20250908_114650,90,TSG,OCaml,1205
+20250908_114650,91,std::round_tensor(),Lightning,1039
+20250908_114650,92,order of the curried llambda,animism,888
+20250908_114650,93,Begot,C/C++,888
+20250908_114650,94,Maximum,"Rust,C++",888
+20250908_114650,95,tomerun,Crystal,888
+20250908_114650,96,capybara_lovers,"c++,OCaml",888
+20250908_114650,97,squadra,python,883
+20250908_114650,98,RGBTeam,"Rust, C++, Python",881
+20250908_114650,99,Andrei,py,880
+20250908_114650,100,DFT,Python & Rust,831
+20250908_114650,101,test-gorillus,zig,800
+20250908_114650,102,NCPLUG,mainly Haskell,573
+20250908_114650,103,rinsakamichi.github.io,C++,573
+20250908_114650,104,eulerscheZahl,C#,573
+20250908_114650,105,Sunspear,C++,573
+20250908_114650,106,lonesome chipmunk,ocaml,571
+20250908_114650,107,testing_library,Java,566
+20250908_114650,108,yupiteru,C#,562
+20250908_114650,109,test-team,python,557
+20250908_114650,110,Cult of the Bound Variable,[REDACTED],556
+20250908_114650,111,hayato,Rust,541
+20250908_114650,112,IO IO It's Off to Work We Go,Rust,526
+20250908_114650,113,s1mahoeg,python,485
+20250908_114650,114,A,P,299
+20250908_114650,115,foobar111,Rust,275
+20250908_114650,116,yowa,"C++,Ruby",275
+20250908_114650,117,ngitmikami,Rust,275
+20250908_114650,118,oglraz,Matlab,275
+20250908_114650,119,Yahoo knows him,python,275
+20250908_114650,120,Sigurd,Prolog,275
+20250908_114650,121,The Blasters,Javascript,275
+20250908_114650,122,undercut,"Kotlin, Python, Rust",275
+20250908_114650,123,ink,python,271
+20250908_114650,124,友人,dysfunctional programming language,271
+20250908_114650,125,frank324,C++,267
+20250908_114650,126,Sometimes but not always,Python,267
+20250908_114650,127,self.atari,"Python, TS/JS, &c.",267
+20250908_114650,128,potato fry,Rust,262
+20250908_114650,129,lambdametal,"Scheme,C",254
+20250908_114650,130,botrevenge,C++,251
+20250908_114650,131,Ivan Zolo,c++,250
+20250908_114650,132,zfhrp,Python,247
+20250908_114650,133,λbubu,"Python,Rust",244
+20250908_114650,134,NIBOJI Fan Club,C++,228
+20250908_114650,135,TeaCup,Python,225
+20250908_114650,136,A,P,0
+20250908_114650,137,gzo,c++,0
+20250908_114650,138,balonit_bros,c++,0
+20250908_114650,139,Lutvuk,Haskell,0
+20250908_114650,140,x14ngch3n,Python,0
+20250908_114650,141,monocolore,python,0
+20250908_114650,142,Piggyheck,"Rust, Python",0
+20250908_114650,143,Foundation Coding,Clojure,0
+20250908_114650,144,gzo,c++,0
+20250908_114650,145,LucasKiwi,python,0
+20250908_114650,146,PKLPO LLC,TypeScript,0
+20250908_114650,147,hiro116s,Rust,0
+20250908_114650,148,LucasKiwi,python,0
+20250908_114650,149,gzo,c++,0
+20250908_114650,150,Lev,C++,0
+20250908_114650,151,R22b,"Python, C++, bash",0
+20250908_114650,152,foobar111,Rust,0
+20250908_114650,153,BonegaAmbalabu,Python,0
+20250908_114650,154,Frederick Pringle,Haskell and Python,0
+20250908_114650,155,HexaMetal,All,0
+20250908_114650,156,Sandman,C#,0
+20250908_114650,157,Rise A Bone,Python,0
+20250908_114650,158,gzo,c++,0
+20250908_114650,159,Test Team,Go,0
+20250908_114650,160,Daniil Sobol,Elixir,0
+20250908_114650,161,Your Team Name,Python,0
+20250908_114650,162,test,,0
+20250908_114650,163,David Bell,go,0
+20250908_114650,164,test-team,python,0
+20250908_114650,165,Odd Taxi,Python,0
+20250908_114650,166,undercut,"Kotlin, Python, Rust",0
+20250908_114650,167,Llamabitets,"QVICKBASIC (version VII.0 with Rust, Python, & Go Extensions)",0
+20250908_114650,168,Test Team,Python,0
+20250908_114650,169,wheezards,Python,0
+20250908_114650,170,LucasKiwi,python,0
+20250908_114650,171,gzo,c++,0
+20250908_114650,172,aaaa,c++,0
+20250908_114650,173,foobar111,Rust,0
+20250908_114650,174,igusarov,C++,0
+20250908_114650,175,bellazio,boh,0
+20250908_114650,176,Jules's Team,Python,0
+20250908_114650,177,gzo,c++,0
+20250908_114650,178,hoelzro,python,0
+20250908_114650,179,cup<t>,copilot,0
+20250908_114650,180,test_user,Python,0
+20250908_114650,181,CupOfT,copilot,0
+20250908_114650,182,gzo,c++,0
+20250908_114650,183,wheezards,Python,0
+20250908_114650,184,space-invaider,cpp,0
+20250908_114650,185,sdb-mapinator,Python,0
+20250908_114650,186,noname,?,0
+20250908_114650,187,NIBOJI Fan Club,C++,0
+20250908_114650,188,YubiYubi,Python,0
+20250908_114650,189,testteam001,Python,0
+20250908_114650,190,arba,coconut,0
+20250908_114650,191,*uni*,Go,0
+20250908_114650,192,sh,~,0
+20250908_114650,193,Begot,C/C++,0
+20250908_114650,194,gzo,c++,0
+20250908_114650,195,Piggyheck,"Rust, Python",0
+20250908_114650,196,the mechanicals,Lean,0
+20250908_114650,197,Tourists,Python,0
+20250908_114650,198,alpha_bootis_test,pen_and_paper,0
+20250908_114650,199,test,,0
+20250908_114650,200,Little Zebra,C++,0
+20250908_114650,201,n0bml,c++,0
+20250908_114650,202,Bears Ate Our Brains,c++,0
+20250908_114650,203,TeaCup,Python,0
+20250908_114650,204,space-invaider,cpp,0
+20250908_114650,205,rinsakamichi.github.io,C++,0
+20250908_114650,206,AnonSolver,Python3,0
+20250908_114650,207,sanityinc,ocaml,0
+20250908_114650,208,aaaa,c++,0
+20250908_114650,209,ilikerice,2,0
+20250908_114650,210,space-invaider,cpp,0
+20250908_114650,211,yupiteru,C#,0
+20250908_114650,212,gzo,c++,0
+20250908_114650,213,icfpc fan,brain,0
+20250908_114650,214,edoput,DFA,0
+20250908_114650,215,Jolly Roger,Java,0
+20250908_114650,216,hirulez,golang,0
+20250908_114650,217,space-invaider,cpp,0
+20250908_114650,218,Rise A Bone,Python,0
+20250908_114650,219,gionimbus,c++,0
+20250908_114650,220,space-invaider,cpp,0
+20250908_114650,221,pacome.f,python,0
+20250908_114650,222,heklers,Python,0
+20250908_114650,223,jus7-a-V01D,Rust and only Rust,0
+20250908_114650,224,test_user,Python,0
+20250908_114650,225,seiyakyokai,"C++,JavaScript",0
+20250908_114650,226,testteam002,Python,0
+20250908_114650,227,monocolore,python,0
+20250908_114650,228,gzo,c++,0
+20250908_114650,229,test_user,Python,0
+20250908_114650,230,LucasKiwi,python,0
+20250908_114650,231,toomer,Rust,0
+20250908_114650,232,rinsakamichi.github.io,C++,0
+20250908_114650,233,meow-meow,meow,0
+20250908_114650,234,gzo,c++,0
+20250908_114650,235,mojaaa-test,rust,0
+20250908_114650,236,Your Team Name,TypeScript,0
+20250908_114650,237,gzo,c++,0
+20250908_114650,238,A,P,0
+20250908_114650,239,hemisphere,clean,0
+20250908_114650,240,SdS_test,Python,0
+20250908_114650,241,AnonSolver,Python3,0
+20250908_114650,242,Leg of Lambda,Python,0
+20250908_114650,243,NetworkNinjas,"C++, Rust, Go",0
+20250908_114650,244,Nadir,Javascript,0
+20250908_114650,245,monocolore,python,0
+20250908_114650,246,The Hexagonal Cartographers,C#,0
+20250908_114650,247,Team Sampou,Haskell,0
+20250908_114650,248,testXXXX1111,go,0
+20250908_114650,249,The Hexagonal Cartographers,C#,0
+20250908_114650,250,code-o-matic,"Java, Python",0
+20250908_114650,251,gzo,c++,0
+20250908_114650,252,UnlikelyToSucceed,Ruby,0
+20250908_114650,253,DK,Python/C++,0
+20250908_114650,254,ARechitsky,Python,0
+20250908_114650,255,monocolore,python,0
+20250908_114650,256,Junk Food,Haskell,0
+20250908_114650,257,Perhyte,Go,0
+20250908_114650,258,pandb,tbd,0
+20250908_114650,259,DNIWE :: a,"vuvko,abbradar",0
+20250908_114650,260,shinh,ruby,0
+20250908_114650,261,skermes,python,0
+20250908_114650,262,poka,Rust,0
+20250908_114650,263,cashto,python,0
+20250908_114650,264,space-invaider,cpp,0
+20250908_114650,265,LucasKiwi,python,0
+20250908_114650,266,LucasKiwi,python,0
+20250908_114650,267,test-mod,bash,0
+20250908_114650,268,Comitative case,Kotlin,0
+20250908_114650,269,UA_paiv,paiv,0
+20250908_114650,270,papier,Go,0
+20250908_114650,271,gzo,c++,0
+20250908_114650,272,LucasKiwi,python,0
+20250908_114650,273,sk,python,0
+20250908_114650,274,Task Manager (Not Responding),Swift,0
+20250908_114650,275,NetworkNinjas,"C++, Rust, Go",0
+20250908_114650,276,Billy Milligan,Python,0
+20250908_114650,277,tipstar0125,Rust,0
+20250908_114650,278,Isaac Clarke,SWI Prolog,0
+20250908_114650,279,marnix,Python,0
+20250908_114650,280,Highlanders,python,0
+20250908_114650,281,parallaxion,Rust,0
+20250908_114650,282,potatoPotato,python,0
+20250908_114650,283,Wile E,3D,0
+20250908_114650,284,Perhyte,Go,0
+20250908_114650,285,The Hexagonal Cartographers,C#,0
+20250908_114650,286,killswitch,"Python,OCaml",0
+20250908_114650,287,Slow,Go,0
+20250908_114650,288,gzo,c++,0
+20250908_114650,289,undecidable,OCaml,0
+20250908_114650,290,,,0
+20250908_114650,291,microrack,python,0
+20250908_114650,292,DNIWE :: a,python,0
+20250908_114650,293,FunctorFans,Python,0
+20250908_114650,294,toomer,Rust,0
+20250908_114650,295,Viator Nocturnus,python,0
+20250908_114650,296,SKY,"Python, C++",0
+20250908_114650,297,HamsterBacke,Java,0
+20250908_114650,298,FIRQ,C/C++,0
+20250908_114650,299,Prolog,go,0
+20250908_114650,300,X,,0
+20250908_114650,301,SdS_test,Python,0
+20250908_114650,302,artem,"c++, python",0
+20250908_114650,303,team_zero,java,0
+20250908_114650,304,semaphores,C,0
+20250908_114650,305,gzo,c++,0
+20250908_114650,306,The Hexagonal Cartographers,C#,0
+20250908_114650,307,AnonSolver,Python3,0
+20250908_114650,308,gzo,c++,0
+20250908_114650,309,YourTeamName,C++,0
+20250908_114650,310,Ralf,Scala,0
+20250908_114650,311,capybara_lovers,3,0
+20250908_114650,312,LazyDFA,Python,0
+20250908_114650,313,The Hexagonal Cartographers,C#,0
+20250908_114650,314,mλgo,Haskell,0
+20250908_114650,315,LucasKiwi,python,0
+20250908_114650,316,NoduleProgrammers,Haskell,0
+20250908_114650,317,The Hexagonal Cartographers,C#,0
+20250908_114650,318,AnonSolver,Python3,0
+20250908_114650,319,decoders,Javascript,0
+20250908_114650,320,x14ngch3n,Python,0
+20250908_114650,321,SergiuTeam,C++,0
+20250908_114650,322,The Hexagonal Cartographers,C#,0
+20250908_114650,323,codingteam,"Scala, Fortran",0
+20250908_114650,324,phantomancy,Julia,0
+20250908_114650,325,hmm,clay tablets,0
+20250908_114650,326,Slytherin,Python,0
+20250908_114650,327,The Hexagonal Cartographers,C#,0
+20250908_114650,328,bibliotheca dynamice iuncta,Rust,0
+20250908_114650,329,A,P,0
+20250908_114650,330,popofpop,Chennai,0
+20250908_114650,331,mnuyav,C#,0
+20250908_114650,332,rado,TypeScript,0
+20250908_114650,333,,,0
+20250908_114650,334,X,X,0
+20250908_114650,335,Test Team,Python,0
+20250908_114650,336,gzo,c++,0
+20250908_114650,337,rinsakamichi.github.io,C++,0
+20250908_114650,338,The Hexagonal Cartographers,C#,0
+20250908_114650,339,bartwe,c#,0
+20250908_114650,340,Tired Engineer,Python,0
+20250908_114650,341,gzo,c++,0
+20250908_114650,342,semaphores,SumedhGirish,0
+20250908_114650,343,A,P,0
+20250908_114650,344,Team Foo,C++,0
+20250908_114650,345,nullie,rust,0
+20250908_114650,346,x14ngch3n,python,0
+20250908_114650,347,Rise A Bone,Python,0
+20250908_114650,348,TestTeamForDocs,Rust,0
+20250908_114650,349,gzo,c++,0
+20250908_114650,350,tarstars,python,0
+20250908_114650,351,ImportLibrary,"python, ocaml",0
+20250908_114650,352,your_team_name,your_pl_value,0
+20250908_114650,353,The Hexagonal Cartographers,C#,0
+20250908_114650,354,dizzy,WhiteSpace,0
+20250908_114650,355,The Hexagonal Cartographers,C#,0
+20250908_114650,356,codermal,Go,0
+20250908_114650,357,gzo,c++,0
