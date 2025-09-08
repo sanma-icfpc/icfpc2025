@@ -80,8 +80,8 @@ class AedificiumClient:
 
 
 # -------- de Bruijn (alphabet=6) --------
-def de_bruijn_seq(k: int, K: int = 6) -> List[int]:
-    """de Bruijn sequence B(K, k) over alphabet [0..K-1], returned linearly (length K**k)."""
+def _de_bruijn_cycle(K: int, k: int) -> List[int]:
+    """Return a cyclic de Bruijn sequence B(K,k) as a list of ints (length K**k)."""
     a = [0] * (K * k)
     seq: List[int] = []
 
@@ -96,29 +96,56 @@ def de_bruijn_seq(k: int, K: int = 6) -> List[int]:
                 a[t] = j
                 db(t + 1, t)
     db(1, 1)
-    return seq  # length K**k
+    return seq  # length == K**k
 
+def de_bruijn_word(K: int, k: int, rotate: int = 0) -> List[int]:
+    """
+    Linear de Bruijn 'word' of length K**k + (k-1):
+    take a cyclic de Bruijn sequence, rotate by `rotate`, then append the first (k-1) symbols.
+    This preserves the length-k window property without wraparound.
+    """
+    cyc = _de_bruijn_cycle(K, k)
+    n = len(cyc)
+    r = rotate % n
+    lin = cyc[r:] + cyc[:r]
+    lin.extend(lin[:k-1])  # append first (k-1) to avoid window break
+    return lin  # length == K**k + (k-1)
 
 def make_single_plan(n_rooms: int, num_copies: int) -> str:
-    """スコア2向け：1本のクエリ列。できるだけ長く（<= 18n）かつ分散よく。
-    n>=12 なら k=3 をフル(216) or 繰り返し詰め、n<12 は k=2 を繰り返し。
     """
+    1 プラン戦略：周期性を避けるため直線 de Bruijn を使用。
+    - num_copies == 1：max_len = 18*n
+    - num_copies > 1：max_len = 6*n
+    - 小規模（primus=6×1）でも k=3 を優先して情報量を増やす
+    """
+    K = 6
     if num_copies == 1:
         max_len = 18 * n_rooms
     else:
         max_len = 6 * n_rooms
-    if n_rooms >= 12:
-        base = de_bruijn_seq(3)  # 216
-    else:
-        base = de_bruijn_seq(2)  # 36
+
+    # ★ 変更点：n_rooms が小さくても k=3 をデフォルトに
+    #   （観測の多様性を上げ、同型解を割りやすくする）
+    k = 3 if n_rooms >= 6 else 2
+
+    # 周期性回避のため回転をランダム化
+    rotate = random.randrange(K ** k)
+    base = de_bruijn_word(K, k, rotate=rotate)  # 長さ K**k + (k-1)
+
     plan_digits: List[int] = []
-    while len(plan_digits) + len(base) <= max_len:
-        plan_digits.extend(base)
-    # 端数を足してビット列の“窓”を壊さないよう、先頭から切出す
-    remain = max_len - len(plan_digits)
-    if remain > 0:
-        plan_digits.extend(base[:remain])
-    return "".join(str(d) for d in plan_digits)
+    # 直線列なので丸ごと繰り返さず、循環窓を滑らせて切り出す
+    # → base を 2 回連結し、どの位置からでも連続で切れるように
+    doubled = base + base
+
+    # 開始オフセットもランダム化して周期性をさらに低減
+    start = random.randrange(len(base))
+    end = start + max_len
+    if end <= len(doubled):
+        window = doubled[start:end]
+    else:
+        window = (doubled * ((end // len(doubled)) + 1))[start:end]
+
+    return "".join(str(d) for d in window)
 
 
 # -------- CP-SAT 復元 --------
