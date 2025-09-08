@@ -5,111 +5,19 @@ ICFP Programming Contest 2025 / Ædificium map learner (Classification Tree vari
 - Builds an equivalent Moore machine (rooms, doors 0..5) and emits /guess JSON.
 - Supports the post-lightning addendum (charcoal marks "[d]" with d in 0..3).
 
-Usage:
-  1) Set ICFP_ID in env if you already registered, or call client.register(...)
-  2) Run main() to solve a selected problem (see PROBLEM_NAME).
 """
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Any
 import os
-import json
 import random
-import requests
-import sys
 import datetime
-import argparse
-
-# Default base URLs per target
-LOCAL_URL = "http://127.0.0.1:8009"
-MINOTAUR_URL = "http://tk2-401-41624.vs.sakura.ne.jp:19384"
+import sys
 ALPHABET = "012345"  # door labels
 GRAFFITI_DIGITS = "0123"  # allowed label overrides in [d]
 
-# ---------- API Client ----------
-
-
-class AedificiumClient:
-    """Ædificium contest API client."""
-
-    def __init__(
-        self,
-        base_url: str,
-        team_id: Optional[str] = None,
-        verbose: bool = False,
-        agent_name: str = "tsuzuki:ctree",
-        agent_id: Optional[str] = None,
-        timeout_sec: Optional[float] = 6000,
-    ):
-        self.base_url = base_url.rstrip("/")
-        self.id = team_id
-        self.verbose = verbose
-        # Per instructions: include Minotaur headers on all POSTs.
-        self.agent_name = agent_name
-        self.agent_id = agent_id or str(os.getpid())
-        # Long timeout for potentially blocking endpoints like /select
-        self.timeout_sec = timeout_sec
-
-    def _post(self, path: str, payload: Dict) -> Dict:
-        url = f"{self.base_url}{path}"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Agent-Name": self.agent_name,
-            "X-Agent-ID": self.agent_id,
-        }
-        if self.verbose:
-            print(f"POST {url}")
-            print("Headers:", headers)
-            print("Payload:", json.dumps(payload, ensure_ascii=False))
-        r = requests.post(url, json=payload, headers=headers, timeout=self.timeout_sec)
-        if self.verbose:
-            try:
-                print("Response:", r.status_code, r.json())
-            except Exception:
-                print("Response:", r.status_code, r.text)
-        r.raise_for_status()
-        try:
-            return r.json()
-        except Exception:
-            return {"_raw": r.text}
-
-    def register(self, name: str, pl: str, email: str) -> str:
-        data = {"name": name, "pl": pl, "email": email}
-        j = self._post("/register", data)
-        self.id = j["id"]
-        return self.id
-
-    def select_problem(self, problem_name: str) -> str:
-        payload = {"problemName": problem_name}
-        if self.id is not None:
-            payload["id"] = self.id
-        j = self._post("/select", payload)
-        return j["problemName"]
-
-    def explore(self, plans: List[str]) -> Tuple[List[List[int]], int]:
-        payload = {"plans": plans}
-        if self.id is not None:
-            payload["id"] = self.id
-        j = self._post("/explore", payload)
-        return j["results"], j["queryCount"]
-
-    def guess(self, guess_map: Dict) -> bool:
-        payload = {"map": guess_map}
-        if self.id is not None:
-            payload["id"] = self.id
-        j = self._post("/guess", payload)
-        return bool(j.get("correct", False))
-
-    def minotaur_giveup(self) -> Dict:
-        """Minotaur-only auxiliary endpoint to voluntarily give up a run.
-        Absent on the official server; safe to ignore failures.
-        """
-        try:
-            return self._post("/minotaur_giveup", {})
-        except Exception as _:
-            return {"ok": False}
-
+# ---------- Solver-facing Oracle and Learner ----------
 
 # ---------- Membership Oracle with batching & caching ----------
 
@@ -124,7 +32,7 @@ class ExploreOracle:
     - The initial state's label is the 0-th element of any returned trace.
     """
 
-    def __init__(self, client: AedificiumClient):
+    def __init__(self, client: Any, plan_length_mode: str = "6n", fixed_n: Optional[int] = None, status: Optional[Any] = None):
         self.client = client
         self.trace_cache: Dict[str, List[int]] = {}  # plan -> full trace (len = |doors|+1)
         self.last_label: Dict[str, int] = {}  # plan -> final label
@@ -133,6 +41,37 @@ class ExploreOracle:
         self.last_query_count: int = 0
         self.last_query_count_output_datetime = datetime.datetime.now()
         self.verbose: bool = getattr(client, "verbose", False)
+        # plan-length enforcement
+        self.plan_length_mode: str = plan_length_mode  # "6n" or "18n"
+        self._state_count: int = 1
+        self._fixed_n: Optional[int] = fixed_n
+        self._deferred: Set[str] = set()
+        self.status = status
+
+    def set_state_count(self, n: int) -> None:
+        # If fixed_n is provided (problem size known), ignore dynamic updates
+        if self._fixed_n is not None:
+            return
+        n = max(1, int(n))
+        if n != self._state_count:
+            self._state_count = n
+            if self.verbose:
+                print(f"[budget] n={n}, budget={self._budget()} (mode={self.plan_length_mode})")
+            # Try to re-queue deferred plans now within budget
+            if self._deferred:
+                now_ok = [p for p in list(self._deferred) if self._doors_len(p) <= self._budget()]
+                if now_ok:
+                    for p in now_ok:
+                        self._deferred.discard(p)
+                    if self.verbose:
+                        print(f"[budget] resurrect {len(now_ok)} deferred plans")
+                    # Put them at the front to be executed soon
+                    self.pending[:0] = now_ok
+
+    def _budget(self) -> int:
+        mult = 6 if self.plan_length_mode == "6n" else 18
+        n = self._fixed_n if self._fixed_n is not None else self._state_count
+        return mult * max(1, n)
 
     @staticmethod
     def _doors_len(plan: str) -> int:
@@ -147,15 +86,22 @@ class ExploreOracle:
                 if w not in self.last_label:
                     self.last_label[w] = self.g("")  # may raise until prewarmed
                 continue
-            if w not in self.trace_cache and w not in self.pending:
+            if w in self.trace_cache or w in self.pending:
+                continue
+            if self._doors_len(w) <= self._budget():
                 self.pending.append(w)
+            else:
+                # Defer overlong plan; try again when n grows
+                self._deferred.add(w)
+        if self.verbose and self._deferred:
+            print(f"[budget] deferred plans: {len(self._deferred)} (budget={self._budget()})")
 
     def commit(self) -> None:
         if not self.pending:
             return
         plans = list(dict.fromkeys(self.pending))  # dedupe, keep order
         self.pending.clear()
-        if self.verbose:
+        if self.verbose and self.status is None:
             door_lens = [self._doors_len(p) for p in plans]
             print(
                 f"/explore commit: {len(plans)} plans, door-steps min/max/avg = "
@@ -166,15 +112,25 @@ class ExploreOracle:
             if len(plans) <= 10:
                 print("Plans:", plans)
         results, _qc = self.client.explore(plans)
-        # soft-throttle printing
-        if (
-            self.last_query_count_output_datetime + datetime.timedelta(seconds=1.0)
-            < datetime.datetime.now()
-        ):
-            self.last_query_count_output_datetime = (
-                datetime.datetime.now() + datetime.timedelta(seconds=1.0)
-            )
-            print(f"{_qc=}")
+        # Update status board with explore summary if available
+        if self.status is not None:
+            try:
+                door_lens = [self._doors_len(p) for p in plans]
+                doors_min = min(door_lens) if door_lens else 0
+                doors_max = max(door_lens) if door_lens else 0
+                doors_avg = (sum(door_lens)/len(door_lens)) if door_lens else 0.0
+                self.status.update_explore(
+                    plans_count=len(plans),
+                    doors_min=doors_min,
+                    doors_max=doors_max,
+                    doors_avg=doors_avg,
+                    qc_last=_qc,
+                    pending=len(self.pending),
+                    deferred=len(self._deferred),
+                )
+                self.status.render()
+            except Exception:
+                pass
         self.last_query_count = _qc
         assert len(results) == len(plans)
         for w, trace in zip(plans, results):
@@ -274,6 +230,7 @@ class ClassTreeMooreLearner:
         random_tests: int = 200,
         max_test_len: int = 8,
         use_graffiti: bool = True,
+        status: Optional[Any] = None,
     ):
         self.oracle = oracle
         self.root = CTNode(exp="")  # test "" (i.e. observe current label)
@@ -281,9 +238,43 @@ class ClassTreeMooreLearner:
         self.random_tests = random_tests
         self.max_test_len = max_test_len
         self.use_graffiti = use_graffiti
+        self.status = status
         # Warm-up to get initial label and server wake-up
         self.oracle.ensure({"0"})
+        self.oracle.set_state_count(len(self.states) if self.states else 1)
         self.oracle.commit()
+        # Register a solver-specific renderer with the status board if available
+        if self.status is not None and hasattr(self.status, "set_solver_renderer"):
+            def _solver_lines() -> List[str]:
+                lines: List[str] = []
+                try:
+                    states = len(self.states)
+                    leaves = sum(1 for s in self.states if s.is_leaf())
+                    exps = len(self._collect_all_experiments())
+                    lines.append(f"Learned states   : {states} (leaf reps {leaves})")
+                    lines.append(f"Active tests     : {exps} discriminator experiments")
+                    if hasattr(self.oracle, "_budget"):
+                        try:
+                            budget = self.oracle._budget()
+                            lines.append(f"Plan budget      : {budget} max door-steps")
+                        except Exception:
+                            pass
+                    if hasattr(self.oracle, "_deferred"):
+                        try:
+                            deferred = len(self.oracle._deferred)
+                            pend = len(self.oracle.pending)
+                            lines.append(f"Pending/Deferred : {pend} queued / {deferred} over-budget")
+                        except Exception:
+                            pass
+                    if hasattr(self, "last_hyp_states"):
+                        lines.append(f"Hypothesis size  : {getattr(self, 'last_hyp_states')} states")
+                except Exception:
+                    pass
+                return lines
+            try:
+                self.status.set_solver_renderer(_solver_lines)
+            except Exception:
+                pass
 
     # ---- classification ----
 
@@ -310,6 +301,8 @@ class ClassTreeMooreLearner:
             leaf.rep_word = u
             leaf.state_index = len(self.states)
             self.states.append(leaf)
+            # Update budget estimate when a new state is confirmed
+            self.oracle.set_state_count(len(self.states))
         return leaf.state_index
 
     # ---- utilities over the tree ----
@@ -347,8 +340,12 @@ class ClassTreeMooreLearner:
         Replace the given leaf by an internal test node 'exp' and redistribute
         the given words (which previously classified to this leaf) into its children.
         """
-        if self.oracle.verbose:
-            print(f"Refine: insert test exp='{exp}' (doors={ExploreOracle._doors_len(exp)})")
+        if self.status is not None:
+            try:
+                self.status.bump_refinements()
+                self.status.render()
+            except Exception:
+                pass
         leaf.replace_with_test(exp)
         buckets: Dict[int, List[str]] = {}
         for w in words_to_redistribute:
@@ -374,14 +371,47 @@ class ClassTreeMooreLearner:
     def learn(self) -> Hypothesis:
         # Initialize with start state as representative
         self.ensure_state("")
+        if self.status is not None:
+            try:
+                self.status.update_solver(states=len(self.states), exps=len(self._collect_all_experiments()), leaves=sum(1 for s in self.states if s.is_leaf()))
+                self.status.render()
+            except Exception:
+                pass
         while True:
             # Expand transitions and discover new states
             self._expand_states_once()
+            if self.status is not None:
+                try:
+                    self.status.update_solver(states=len(self.states), exps=len(self._collect_all_experiments()), leaves=sum(1 for s in self.states if s.is_leaf()))
+                    self.status.render()
+                except Exception:
+                    pass
             # Refine until consistent
             if self._refine_once():
+                if self.status is not None:
+                    try:
+                        self.status.update_solver(states=len(self.states), exps=len(self._collect_all_experiments()), leaves=sum(1 for s in self.states if s.is_leaf()))
+                        self.status.render()
+                    except Exception:
+                        pass
                 continue
             # Consistent: make hypothesis
             hyp = self._make_hypothesis()
+            if self.status is not None:
+                try:
+                    self.status.set_hyp_states(len(hyp.outputs))
+                    self.status.render()
+                except Exception:
+                    pass
+            # If problem size is known and we already have exactly that many states,
+            # skip random strengthening to save queries on small problems.
+            try:
+                fixed_n = getattr(self.oracle, "_fixed_n", None)
+                if fixed_n is not None and len(hyp.outputs) >= fixed_n:
+                    # no console print here; runner/status board handles output
+                    return hyp
+            except Exception:
+                pass
             # Validate with random tests; strengthen if needed
             if self._strengthen_with_random_counterexample(hyp):
                 continue
@@ -400,6 +430,8 @@ class ClassTreeMooreLearner:
                     plan = u + e
                     if ExploreOracle._doors_len(plan) > 0:
                         need.add(plan)
+        # update budget before queueing
+        self.oracle.set_state_count(len(self.states) if self.states else 1)
         self.oracle.ensure(need)
         self.oracle.commit()
         for leaf in self.states:
@@ -441,6 +473,7 @@ class ClassTreeMooreLearner:
                 plan = u + e
                 if ExploreOracle._doors_len(plan) > 0:
                     need.add(plan)
+        self.oracle.set_state_count(len(self.states) if self.states else 1)
         self.oracle.ensure(need)
         self.oracle.commit()
         # Classify
@@ -488,76 +521,133 @@ class ClassTreeMooreLearner:
         Try to find e such that g(u+e) != g(v+e) using short graffiti patterns.
         Returns such an e if found, otherwise None.
 
-        Heuristics:
-          1) length-1 and length-2 pure door suffixes (cheap sanity check)
-          2) "[d]ab" for d in 0..3 and a,b in 0..5 (mark & bounce)
-          3) "[d]a" (rarely useful but cheap)
+        Heuristics (staged to keep query volume low):
+          Stage 1) a in 0..5 and "[d]a"
+          Stage 2) ab in 0..5^2
+          Stage 3) "[d]ab" (mark & bounce)
         """
-        candidates: List[str] = []
-        # 1) Pure door suffixes length 1 and 2
-        for a in ALPHABET:
-            candidates.append(a)
+        # Build stages
+        stages: List[List[str]] = []
+        s1: List[str] = []
+        s1.extend([a for a in ALPHABET])
+        for d in GRAFFITI_DIGITS:
+            for a in ALPHABET:
+                s1.append(f"[{d}]{a}")
+        stages.append(s1)
+        s2: List[str] = []
         for a in ALPHABET:
             for b in ALPHABET:
-                candidates.append(a + b)
-        # 2) Mark & bounce
+                s2.append(a + b)
+        stages.append(s2)
+        s3: List[str] = []
         for d in GRAFFITI_DIGITS:
             for a in ALPHABET:
                 for b in ALPHABET:
-                    candidates.append(f"[{d}]{a}{b}")
-        # 3) Mark-only then move one step
-        for d in GRAFFITI_DIGITS:
-            for a in ALPHABET:
-                candidates.append(f"[{d}]{a}")
-        # Batch and test
-        need: Set[str] = set()
-        for e in candidates:
-            if ExploreOracle._doors_len(e) == 0:
+                    s3.append(f"[{d}]{a}{b}")
+        stages.append(s3)
+
+        for cand in stages:
+            need: Set[str] = set()
+            for e in cand:
+                if ExploreOracle._doors_len(e) == 0:
+                    continue
+                if ExploreOracle._doors_len(u + e) <= self.oracle._budget():
+                    need.add(u + e)
+                if ExploreOracle._doors_len(v + e) <= self.oracle._budget():
+                    need.add(v + e)
+            if not need:
                 continue
-            need.add(u + e)
-            need.add(v + e)
-        self.oracle.ensure(need)
-        self.oracle.commit()
-        for e in candidates:
-            if ExploreOracle._doors_len(e) == 0:
-                continue
-            gu = self.oracle.g(u + e)
-            gv = self.oracle.g(v + e)
-            if gu != gv:
-                return e
+            self.oracle.ensure(need)
+            self.oracle.commit()
+            for e in cand:
+                if ExploreOracle._doors_len(e) == 0:
+                    continue
+                if ExploreOracle._doors_len(u + e) > self.oracle._budget():
+                    continue
+                if ExploreOracle._doors_len(v + e) > self.oracle._budget():
+                    continue
+                gu = self.oracle.g(u + e)
+                gv = self.oracle.g(v + e)
+                if gu != gv:
+                    return e
         return None
 
     def _make_hypothesis(self) -> Hypothesis:
-        # Assign indices (ensure all reps are current leaves)
-        for leaf in self.states:
-            if leaf.rep_word is not None:
-                self.ensure_state(leaf.rep_word)
-        # Build outputs & reps in index order
-        idx_to_rep: Dict[int, str] = {}
-        idx_to_out: Dict[int, int] = {}
-        for leaf in self.states:
-            if leaf.state_index is not None and leaf.rep_word is not None:
-                idx_to_rep[leaf.state_index] = leaf.rep_word
-                idx_to_out[leaf.state_index] = self.oracle.g(leaf.rep_word)
-        if not idx_to_rep:
-            raise RuntimeError("No states learned.")
-        max_idx = max(idx_to_rep)
-        rep_for_state = [idx_to_rep[i] for i in range(max_idx + 1)]
-        outputs = [idx_to_out[i] for i in range(max_idx + 1)]
-        # Build delta
-        n = len(rep_for_state)
-        delta: List[List[int]] = [[0] * 6 for _ in range(n)]
-        for i, rep in enumerate(rep_for_state):
+        # Reindex states from current leaves to ensure contiguous indices starting at 0.
+        # 1) Collect all current leaves that have representatives
+        rep_leaves: List[CTNode] = []
+        seen_nodes: Set[int] = set()
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            if node.is_leaf():
+                if node.rep_word is not None and id(node) not in seen_nodes:
+                    rep_leaves.append(node)
+                    seen_nodes.add(id(node))
+            else:
+                for ch in node.children.values():
+                    stack.append(ch)
+
+        # Ensure the start state's leaf exists and is first
+        start_leaf = self.classify("")
+        if start_leaf.rep_word is None:
+            start_leaf.rep_word = ""
+        # Clear all indices
+        for ln in rep_leaves:
+            ln.state_index = None
+        start_leaf.state_index = 0
+
+        ordered_nodes: List[CTNode] = [start_leaf]
+        for ln in rep_leaves:
+            if ln is start_leaf:
+                continue
+            ln.state_index = len(ordered_nodes)
+            ordered_nodes.append(ln)
+
+        # Build reps and outputs dynamically and guarantee closure under Σ
+        rep_for_state: List[str] = [node.rep_word or "" for node in ordered_nodes]
+        outputs: List[int] = [self.oracle.g(word) for word in rep_for_state]
+        delta: List[List[int]] = [[0] * 6 for _ in range(len(ordered_nodes))]
+
+        i = 0
+        while i < len(ordered_nodes):
+            rep = ordered_nodes[i].rep_word or ""
+            # Prefetch successors for this representative across all current experiments
+            all_exps = self._collect_all_experiments()
+            need: Set[str] = set()
             for d in range(6):
                 u = rep + str(d)
-                j = self.ensure_state(u)
+                for e in all_exps:
+                    plan = u + e
+                    if ExploreOracle._doors_len(plan) > 0:
+                        need.add(plan)
+            if need:
+                self.oracle.ensure(need)
+                self.oracle.commit()
+            for d in range(6):
+                u = rep + str(d)
                 leaf_u = self.classify(u)
                 if leaf_u.state_index is None:
-                    leaf_u.state_index = j
+                    # New state discovered; assign next index
+                    leaf_u.state_index = len(ordered_nodes)
+                    ordered_nodes.append(leaf_u)
+                    rep_for_state.append(leaf_u.rep_word or u)
+                    outputs.append(self.oracle.g(rep_for_state[-1]))
+                    # expand delta table for the new state
+                    delta.append([0] * 6)
                 delta[i][d] = leaf_u.state_index
+            i += 1
+
         hyp = Hypothesis(rep_for_state=rep_for_state, outputs=outputs, delta=delta)
+        # Track for status renderer
+        try:
+            self.last_hyp_states = len(rep_for_state)
+        except Exception:
+            pass
         if self.oracle.verbose:
             print(f"Hypothesis built: states={len(rep_for_state)}")
+        # Keep self.states in sync with the current indexed leaves
+        self.states = ordered_nodes
         return hyp
 
     def _strengthen_with_random_counterexample(self, hyp: Hypothesis) -> bool:
@@ -579,12 +669,15 @@ class ClassTreeMooreLearner:
             for u in frontier:
                 for a in ALPHABET:
                     w = u + a
-                    words.add(w)
+                    if ExploreOracle._doors_len(w) <= self.oracle._budget():
+                        words.add(w)
                     new_frontier.append(w)
             frontier = new_frontier
         for _ in range(200):
             L = random.randint(1, 8)
-            words.add("".join(random.choice(ALPHABET) for _ in range(L)))
+            w = "".join(random.choice(ALPHABET) for _ in range(L))
+            if ExploreOracle._doors_len(w) <= self.oracle._budget():
+                words.add(w)
         self.oracle.ensure(words)
         self.oracle.commit()
 
@@ -661,111 +754,4 @@ def build_guess_from_hypothesis(hyp: Hypothesis) -> Dict:
     return {"rooms": rooms, "startingRoom": starting_room, "connections": connections}
 
 
-# ---------- Example runner ----------
-
-
-def main():
-    """
-    End-to-end: select problem, learn, and submit guess.
-    """
-    parser = argparse.ArgumentParser(description="ICFP 2025 Classification Tree solver")
-    parser.add_argument(
-        "--target",
-        choices=["local", "minotaur"],
-        default="local",
-        help="API target to use (default: local)",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Print HTTP request/response details",
-    )
-    parser.add_argument(
-        "--agent-name",
-        default="anonymous:ctree",
-        help="Sets X-Agent-Name (default: anonymous:ctree)",
-    )
-    parser.add_argument(
-        "--plan-length",
-        choices=["6n", "18n"],
-        default="6n",
-        help="Constraint mode for door-steps in plans (default: 6n)",
-    )
-    parser.add_argument(
-        "--giveup",
-        action="store_true",
-        help="When targeting Minotaur, call /minotaur_giveup and exit",
-    )
-    args = parser.parse_args()
-
-    # Choose base URL by target
-    if args.target == "minotaur":
-        base_url = MINOTAUR_URL
-    else:
-        base_url = LOCAL_URL
-
-    # Get ID from env or register once (then set ICFP_ID env for later runs)
-    team_id = os.getenv("ICFP_ID")
-    client = AedificiumClient(
-        base_url=base_url,
-        team_id=team_id,
-        verbose=args.verbose,
-        agent_name=args.agent_name,
-        agent_id=str(os.getpid()),
-        timeout_sec=6000,
-    )
-
-    # Startup diagnostics
-    print("=== Aedificium DT Runner ===")
-    print("Target:", args.target, "->", client.base_url)
-    print("Agent:", client.agent_name, "(id:", client.agent_id + ")")
-    print("Team ID set:", bool(client.id))
-    print("Plan Length Mode:", args.plan_length)
-    print("Verbose:", args.verbose)
-    try:
-        import platform
-        import requests as _rq
-        print("Python:", platform.python_version())
-        print("Requests:", _rq.__version__)
-    except Exception:
-        pass
-
-    # Optional: allow manual giveup against Minotaur
-    if args.giveup:
-        res = client.minotaur_giveup()
-        print("minotaur_giveup:", res)
-        return
-
-    # Select a problem (post-lightning addendum enabled)
-    # Try a small problem first when debugging:
-    # PROBLEM_NAME = "probatio"
-    # Lightning set: primus..quintus
-    # Post-lightning set: aleph, beth, gimel, ...
-    PROBLEM_NAME = os.getenv("ICFP_PROBLEM", "primus")
-    chosen = client.select_problem(PROBLEM_NAME)
-    print("Selected:", chosen)
-
-    oracle = ExploreOracle(client)
-    learner = ClassTreeMooreLearner(oracle, use_graffiti=True)
-
-    hyp = learner.learn()
-    guess_map = build_guess_from_hypothesis(hyp)
-
-    print(json.dumps(guess_map, indent=2))
-
-    try:
-        ok = client.guess(guess_map)
-        print("Guess correct?", ok)
-    except requests.HTTPError as e:
-        print("HTTP error during /guess:", e)
-    except Exception as ex:
-        print("Error during /guess:", ex)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except requests.HTTPError as e:
-        print("HTTP error:", e)
-    except Exception as ex:
-        print("Error:", ex)
+# Runner/CLI moved to runner.py; this module contains only solver logic.
