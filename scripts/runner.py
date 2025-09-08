@@ -56,6 +56,9 @@ class StatusBoard:
         self.t0: Optional[float] = None  # starts after /select
         self.state: str = "idle"  # pending | solving | done | cancelled | terminated
         self._t_pending_start: Optional[float] = None
+        # Trial counters (for repeated runs)
+        self.trial_index: Optional[int] = None
+        self.trial_total: Optional[int] = None  # 0 or None => ∞
         self.requests_total = 0
         self.req_counts = {"/select": 0, "/explore": 0, "/guess": 0, "/minotaur_giveup": 0}
         self.last_endpoint = None
@@ -182,7 +185,15 @@ class StatusBoard:
         m = (elapsed % 3600) // 60
         s = elapsed % 60
         elapsed_str = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
-        label = f" STATUS: {self.state.upper()} • {elapsed_str} "
+        # Trial string (e.g., "2 / 10" or "13 / ∞")
+        trial_str = ""
+        try:
+            if self.trial_index is not None:
+                tot_disp = "∞" if (self.trial_total is None or self.trial_total == 0) else str(self.trial_total)
+                trial_str = f" • {self.trial_index} / {tot_disp}"
+        except Exception:
+            pass
+        label = f" STATUS: {self.state.upper()} • {elapsed_str}{trial_str} "
         color = {
             "pending": "30;43",  # black on yellow
             "solving": "97;44",  # bright white on blue
@@ -192,6 +203,15 @@ class StatusBoard:
             "idle": "30;47",     # black on white
         }.get(self.state, "30;47")
         return f"\x1b[{color}m" + label.ljust(cols) + "\x1b[0m"
+
+    def set_trial(self, index: int, total: Optional[int]):
+        """Set current trial number and total (0/None => ∞)."""
+        try:
+            self.trial_index = index
+            self.trial_total = total
+        except Exception:
+            pass
+        self.render()
 
     def prompt_yes_no(self, question: str, default_yes: bool = True) -> Optional[bool]:
         """Prompt the user for a Y/n answer below the board.
@@ -570,6 +590,12 @@ def main():
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--giveup", action="store_true")
     parser.add_argument(
+        "--n-trial",
+        type=int,
+        default=1,
+        help="Number of trials to repeat (0 = infinite)",
+    )
+    parser.add_argument(
         "--solver",
         default="ctree",
         help="Solver name; imports module 'runner_<name>'",
@@ -713,42 +739,6 @@ def main():
             except BaseException:
                 pass
 
-    # Indicate waiting/pending for /select
-    try:
-        status.set_state("pending")
-        status.add_free("Waiting for our turn… Press Ctrl-C to open prompt")
-    except Exception:
-        pass
-    # Run /select in a background thread to keep main thread responsive to Ctrl-C
-    import threading as _threading
-    _select_done = {"done": False, "value": None, "error": None}
-    def _do_select():
-        try:
-            _select_done["value"] = client.select_problem(problem)
-        except Exception as e:
-            _select_done["error"] = e
-        finally:
-            _select_done["done"] = True
-    _t = _threading.Thread(target=_do_select, daemon=True)
-    _t.start()
-    while _t.is_alive():
-        try:
-            time.sleep(0.1)
-        except KeyboardInterrupt:
-            _handle_interrupt(
-                "Give up? (sends /minotaur_giveup to step aside) [Y/n]",
-                "Abort? [Y/n]",
-            )
-    # Thread finished: check result
-    if _select_done["error"] is not None:
-        # Re-raise to use existing error handling path
-        raise _select_done["error"]
-    chosen = _select_done["value"]
-    try:
-        status.add_free(f"Selected: {chosen}")
-    except Exception:
-        pass
-
     # Create solver via module factory (runner remains solver-agnostic)
     solve_fn = getattr(solver_module, "solve", None)
     if solve_fn is None:
@@ -766,87 +756,148 @@ def main():
             return build_guess(learner.learn())
         solve_fn = _compat_solve
 
-    # Run solve in background to keep Ctrl-C responsive on Windows/Linux
-    import threading as _threading
-    _solve_done = {"done": False, "value": None, "error": None}
-    def _do_solve():
+    # Trial loop: repeat select -> solve -> guess
+    total_trials = args.n_trial
+    i = 1
+    while True:
         try:
-            _solve_done["value"] = solve_fn(
-                client=client,
-                problem=problem,
-                size=size,
-                plan_mode=plan_mode,
-                status=status,
-                cancel_event=_cancel_event,
-                use_graffiti=(args.target == "minotaur"),
-            )
-        except BaseException as e:
-            _solve_done["error"] = e
-        finally:
-            _solve_done["done"] = True
-    _ts = _threading.Thread(target=_do_solve, daemon=True)
-    _ts.start()
-    try:
-        status.add_free("Solving… Press Ctrl-C to open prompt")
-    except Exception:
-        pass
-    while _ts.is_alive():
+            _cancel_event.clear()
+        except BaseException:
+            pass
+        # Update trial display (0 or None => ∞)
         try:
-            time.sleep(0.1)
-        except KeyboardInterrupt:
-            _handle_interrupt(
-                "Give up solving? (sends /minotaur_giveup and exits) [Y/n]",
-                "Abort solving? [Y/n]",
-            )
-    if _solve_done["error"] is not None:
-        raise _solve_done["error"]
-    guess_map = _solve_done["value"]
+            status.set_trial(i, total_trials)
+        except Exception:
+            pass
 
-    # Run guess in background to avoid Ctrl-C killing request
-    _guess_done = {"done": False, "value": None, "error": None}
-    def _do_guess():
+        # Indicate waiting/pending for /select
         try:
-            _guess_done["value"] = client.guess(guess_map)
-        except BaseException as e:
-            _guess_done["error"] = e
-        finally:
-            _guess_done["done"] = True
-    _tg = _threading.Thread(target=_do_guess, daemon=True)
-    _tg.start()
-    try:
-        status.add_free("Submitting… Press Ctrl-C to open prompt")
-    except Exception:
-        pass
-    while _tg.is_alive():
+            status.set_state("pending")
+            status.add_free("Waiting for our turn… Press Ctrl-C to open prompt")
+        except Exception:
+            pass
+        # Run /select in a background thread to keep main thread responsive to Ctrl-C
+        import threading as _threading
+        _select_done = {"done": False, "value": None, "error": None}
+        def _do_select():
+            try:
+                _select_done["value"] = client.select_problem(problem)
+            except Exception as e:
+                _select_done["error"] = e
+            finally:
+                _select_done["done"] = True
+        _t = _threading.Thread(target=_do_select, daemon=True)
+        _t.start()
+        while _t.is_alive():
+            try:
+                time.sleep(0.1)
+            except KeyboardInterrupt:
+                _handle_interrupt(
+                    "Give up? (sends /minotaur_giveup to step aside) [Y/n]",
+                    "Abort? [Y/n]",
+                )
+        # Thread finished: check result
+        if _select_done["error"] is not None:
+            # Re-raise to use existing error handling path
+            raise _select_done["error"]
+        chosen = _select_done["value"]
         try:
-            time.sleep(0.1)
-        except KeyboardInterrupt:
-            _handle_interrupt(
-                "Give up while submitting? (sends /minotaur_giveup) [Y/n]",
-                "Abort submitting? [Y/n]",
-            )
-    if _guess_done["error"] is not None:
-        ex = _guess_done["error"]
-        if isinstance(ex, requests.HTTPError):
+            status.add_free(f"Selected: {chosen}")
+        except Exception:
+            pass
+
+        # Run solve in background to keep Ctrl-C responsive on Windows/Linux
+        import threading as _threading
+        _solve_done = {"done": False, "value": None, "error": None}
+        def _do_solve():
             try:
-                status.add_free(f"HTTP error during /guess: {ex}")
-                status.set_state("done")
-            except Exception:
-                pass
-            sys.exit(1)
-        else:
+                _solve_done["value"] = solve_fn(
+                    client=client,
+                    problem=problem,
+                    size=size,
+                    plan_mode=plan_mode,
+                    status=status,
+                    cancel_event=_cancel_event,
+                    use_graffiti=(args.target == "minotaur"),
+                )
+            except BaseException as e:
+                _solve_done["error"] = e
+            finally:
+                _solve_done["done"] = True
+        _ts = _threading.Thread(target=_do_solve, daemon=True)
+        _ts.start()
+        try:
+            status.add_free("Solving… Press Ctrl-C to open prompt")
+        except Exception:
+            pass
+        while _ts.is_alive():
             try:
-                status.add_free(f"Error during /guess: {type(ex).__name__}: {ex}")
-                status.set_state("done")
-            except Exception:
-                pass
-            sys.exit(1)
-    ok = _guess_done["value"]
-    try:
-        status.add_free(f"Guess correct? {ok}")
-        status.set_state("done")
-    except Exception:
-        pass
+                time.sleep(0.1)
+            except KeyboardInterrupt:
+                _handle_interrupt(
+                    "Give up solving? (sends /minotaur_giveup and exits) [Y/n]",
+                    "Abort solving? [Y/n]",
+                )
+        if _solve_done["error"] is not None:
+            raise _solve_done["error"]
+        guess_map = _solve_done["value"]
+
+        # Run guess in background to avoid Ctrl-C killing request
+        _guess_done = {"done": False, "value": None, "error": None}
+        def _do_guess():
+            try:
+                _guess_done["value"] = client.guess(guess_map)
+            except BaseException as e:
+                _guess_done["error"] = e
+            finally:
+                _guess_done["done"] = True
+        _tg = _threading.Thread(target=_do_guess, daemon=True)
+        _tg.start()
+        try:
+            status.add_free("Submitting… Press Ctrl-C to open prompt")
+        except Exception:
+            pass
+        while _tg.is_alive():
+            try:
+                time.sleep(0.1)
+            except KeyboardInterrupt:
+                _handle_interrupt(
+                    "Give up while submitting? (sends /minotaur_giveup) [Y/n]",
+                    "Abort submitting? [Y/n]",
+                )
+        if _guess_done["error"] is not None:
+            ex = _guess_done["error"]
+            if isinstance(ex, requests.HTTPError):
+                try:
+                    status.add_free(f"HTTP error during /guess: {ex}")
+                    status.set_state("done")
+                except Exception:
+                    pass
+                sys.exit(1)
+            else:
+                try:
+                    status.add_free(f"Error during /guess: {type(ex).__name__}: {ex}")
+                    status.set_state("done")
+                except Exception:
+                    pass
+                sys.exit(1)
+        ok = _guess_done["value"]
+        try:
+            status.add_free(f"Guess correct? {ok}")
+            status.set_state("done")
+        except Exception:
+            pass
+
+        # Exit or continue to next trial
+        if bool(ok):
+            break
+        if total_trials != 0 and i >= total_trials:
+            break
+        i += 1
+        try:
+            status.add_free("--- Next trial starting ---")
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
