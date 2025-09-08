@@ -16,6 +16,7 @@ import datetime
 import sys
 ALPHABET = "012345"  # door labels
 GRAFFITI_DIGITS = "0123"  # allowed label overrides in [d]
+DEFAULT_AGENT_NAME = "tsuzuki:ctree"
 
 # ---------- Solver-facing Oracle and Learner ----------
 
@@ -32,7 +33,7 @@ class ExploreOracle:
     - The initial state's label is the 0-th element of any returned trace.
     """
 
-    def __init__(self, client: Any, plan_length_mode: str = "6n", fixed_n: Optional[int] = None, status: Optional[Any] = None):
+    def __init__(self, client: Any, plan_length_mode: str = "6n", fixed_n: Optional[int] = None, status: Optional[Any] = None, cancel_event: Optional[Any] = None):
         self.client = client
         self.trace_cache: Dict[str, List[int]] = {}  # plan -> full trace (len = |doors|+1)
         self.last_label: Dict[str, int] = {}  # plan -> final label
@@ -47,6 +48,7 @@ class ExploreOracle:
         self._fixed_n: Optional[int] = fixed_n
         self._deferred: Set[str] = set()
         self.status = status
+        self.cancel_event = cancel_event
 
     def set_state_count(self, n: int) -> None:
         # If fixed_n is provided (problem size known), ignore dynamic updates
@@ -99,6 +101,8 @@ class ExploreOracle:
     def commit(self) -> None:
         if not self.pending:
             return
+        if getattr(self, "cancel_event", None) is not None and self.cancel_event.is_set():
+            raise RuntimeError("cancelled")
         plans = list(dict.fromkeys(self.pending))  # dedupe, keep order
         self.pending.clear()
         if self.verbose and self.status is None:
@@ -111,7 +115,19 @@ class ExploreOracle:
             )
             if len(plans) <= 10:
                 print("Plans:", plans)
-        results, _qc = self.client.explore(plans)
+        try:
+            results, _qc = self.client.explore(plans)
+        except Exception as ex:
+            # Surface helpful context when /explore fails
+            try:
+                if self.status is not None:
+                    lens = [self._doors_len(p) for p in plans]
+                    self.status.add_free(f"/explore failed: {type(ex).__name__}: {ex}")
+                    self.status.add_free(f"plans={plans}")
+                    self.status.add_free(f"door-steps={lens}")
+            except Exception:
+                pass
+            raise
         # Update status board with explore summary if available
         if self.status is not None:
             try:
@@ -143,6 +159,8 @@ class ExploreOracle:
 
     def g(self, w: str) -> int:
         """Return final label for plan w ("" denotes initial label)."""
+        if getattr(self, "cancel_event", None) is not None and self.cancel_event.is_set():
+            raise RuntimeError("cancelled")
         if w == "":
             if self.init_label is not None:
                 return self.init_label
@@ -752,6 +770,47 @@ def build_guess_from_hypothesis(hyp: Hypothesis) -> Dict:
             used[r2][partner] = True
 
     return {"rooms": rooms, "startingRoom": starting_room, "connections": connections}
+
+
+# Factory for runner: create and return a solver instance (learner)
+def create_solver(
+    client: Any,
+    problem: str,
+    size: int,
+    plan_mode: str,
+    status: Optional[Any] = None,
+    cancel_event: Optional[Any] = None,
+    use_graffiti: bool = True,
+) -> Any:
+    oracle = ExploreOracle(client, plan_length_mode=plan_mode, fixed_n=size, status=status, cancel_event=cancel_event)
+    learner = ClassTreeMooreLearner(oracle, use_graffiti=use_graffiti, status=status)
+    return learner
+
+
+def solve(
+    client: Any,
+    problem: str,
+    size: int,
+    plan_mode: str,
+    status: Optional[Any] = None,
+    cancel_event: Optional[Any] = None,
+    use_graffiti: bool = True,
+) -> Dict:
+    """High-level entry: train and return a /guess map.
+
+    Runner should call this to avoid depending on solver-internal structures.
+    """
+    learner = create_solver(
+        client=client,
+        problem=problem,
+        size=size,
+        plan_mode=plan_mode,
+        status=status,
+        cancel_event=cancel_event,
+        use_graffiti=use_graffiti,
+    )
+    hyp = learner.learn()
+    return build_guess_from_hypothesis(hyp)
 
 
 # Runner/CLI moved to runner.py; this module contains only solver logic.
