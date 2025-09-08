@@ -46,7 +46,6 @@ class AedificiumClient:
         self.id = team_id
         self.verbose = verbose
         # Per instructions: include Minotaur headers on all POSTs.
-        # Use both X-Agent-Name and X-Name-Agent to be safe.
         self.agent_name = agent_name
         self.agent_id = agent_id or str(os.getpid())
         # Long timeout for potentially blocking endpoints like /select
@@ -56,7 +55,6 @@ class AedificiumClient:
         url = f"{self.base_url}{path}"
         headers = {
             "Content-Type": "application/json",
-            # Both headers for compatibility with differing docs
             "X-Agent-Name": self.agent_name,
             "X-Agent-ID": self.agent_id,
         }
@@ -134,6 +132,7 @@ class ExploreOracle:
         self.init_label: Optional[int] = None
         self.last_query_count: int = 0
         self.last_query_count_output_datetime = datetime.datetime.now()
+        self.verbose: bool = getattr(client, "verbose", False)
 
     @staticmethod
     def _doors_len(plan: str) -> int:
@@ -156,6 +155,16 @@ class ExploreOracle:
             return
         plans = list(dict.fromkeys(self.pending))  # dedupe, keep order
         self.pending.clear()
+        if self.verbose:
+            door_lens = [self._doors_len(p) for p in plans]
+            print(
+                f"/explore commit: {len(plans)} plans, door-steps min/max/avg = "
+                f"{min(door_lens) if door_lens else 0}/"
+                f"{max(door_lens) if door_lens else 0}/"
+                f"{(sum(door_lens)/len(door_lens)) if door_lens else 0:.2f}"
+            )
+            if len(plans) <= 10:
+                print("Plans:", plans)
         results, _qc = self.client.explore(plans)
         # soft-throttle printing
         if (
@@ -338,6 +347,8 @@ class ClassTreeMooreLearner:
         Replace the given leaf by an internal test node 'exp' and redistribute
         the given words (which previously classified to this leaf) into its children.
         """
+        if self.oracle.verbose:
+            print(f"Refine: insert test exp='{exp}' (doors={ExploreOracle._doors_len(exp)})")
         leaf.replace_with_test(exp)
         buckets: Dict[int, List[str]] = {}
         for w in words_to_redistribute:
@@ -544,7 +555,10 @@ class ClassTreeMooreLearner:
                 if leaf_u.state_index is None:
                     leaf_u.state_index = j
                 delta[i][d] = leaf_u.state_index
-        return Hypothesis(rep_for_state=rep_for_state, outputs=outputs, delta=delta)
+        hyp = Hypothesis(rep_for_state=rep_for_state, outputs=outputs, delta=delta)
+        if self.oracle.verbose:
+            print(f"Hypothesis built: states={len(rep_for_state)}")
+        return hyp
 
     def _strengthen_with_random_counterexample(self, hyp: Hypothesis) -> bool:
         """
@@ -657,7 +671,7 @@ def main():
     parser = argparse.ArgumentParser(description="ICFP 2025 Classification Tree solver")
     parser.add_argument(
         "--target",
-        choices=["official", "local", "minotaur"],
+        choices=["local", "minotaur"],
         default="local",
         help="API target to use (default: local)",
     )
@@ -665,6 +679,17 @@ def main():
         "--verbose",
         action="store_true",
         help="Print HTTP request/response details",
+    )
+    parser.add_argument(
+        "--agent-name",
+        default="anonymous:ctree",
+        help="Sets X-Agent-Name (default: anonymous:ctree)",
+    )
+    parser.add_argument(
+        "--plan-length",
+        choices=["6n", "18n"],
+        default="6n",
+        help="Constraint mode for door-steps in plans (default: 6n)",
     )
     parser.add_argument(
         "--giveup",
@@ -685,10 +710,25 @@ def main():
         base_url=base_url,
         team_id=team_id,
         verbose=args.verbose,
-        agent_name="tsuzuki:ctree",
+        agent_name=args.agent_name,
         agent_id=str(os.getpid()),
         timeout_sec=6000,
     )
+
+    # Startup diagnostics
+    print("=== Aedificium DT Runner ===")
+    print("Target:", args.target, "->", client.base_url)
+    print("Agent:", client.agent_name, "(id:", client.agent_id + ")")
+    print("Team ID set:", bool(client.id))
+    print("Plan Length Mode:", args.plan_length)
+    print("Verbose:", args.verbose)
+    try:
+        import platform
+        import requests as _rq
+        print("Python:", platform.python_version())
+        print("Requests:", _rq.__version__)
+    except Exception:
+        pass
 
     # Optional: allow manual giveup against Minotaur
     if args.giveup:
@@ -696,18 +736,12 @@ def main():
         print("minotaur_giveup:", res)
         return
 
-    if client.id is None and args.target == "official":
-        # One-time registration (then set ICFP_ID env for later runs)
-        # client.register(name="Your Team", pl="Python", email="you@example.com")
-        print("Please set ICFP_ID in the environment or call client.register(...) once.")
-        sys.exit(1)
-
     # Select a problem (post-lightning addendum enabled)
     # Try a small problem first when debugging:
     # PROBLEM_NAME = "probatio"
     # Lightning set: primus..quintus
     # Post-lightning set: aleph, beth, gimel, ...
-    PROBLEM_NAME = os.getenv("ICFP_PROBLEM", "probatio")
+    PROBLEM_NAME = os.getenv("ICFP_PROBLEM", "primus")
     chosen = client.select_problem(PROBLEM_NAME)
     print("Selected:", chosen)
 
