@@ -29,10 +29,10 @@ AGENT_ID = str(os.getpid())
 TIMEOUT_SEC = 6000
 PROGRESS_DURATION_SEC = float(os.getenv("PROGRESS_DURATION_SEC", -1.0))
 
-print(f"{BASE_URL=}")
-print(f"{AGENT_NAME=}")
-print(f"{AGENT_ID=}")
-print(f"{PROGRESS_DURATION_SEC=}")
+print(f"{BASE_URL=}", flush=True)
+print(f"{AGENT_NAME=}", flush=True)
+print(f"{AGENT_ID=}", flush=True)
+print(f"{PROGRESS_DURATION_SEC=}", flush=True)
 
 # ==== API client ==== #
 
@@ -44,7 +44,6 @@ class AedificiumClient:
         team_id: Optional[str] = None,
     ):
         self.base_url = base_url.rstrip("/")
-        print(f"{self.base_url=}", flush=True)
         self.id = team_id
 
     def _post(self, path: str, payload: Dict) -> Dict:
