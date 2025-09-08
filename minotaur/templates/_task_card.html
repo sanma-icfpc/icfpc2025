@@ -17,6 +17,21 @@
           <span class="truncate">{{ t.problem_id }}</span>
           <span class="ml-3 text-gray-500">agent:</span>
           {{ t.agent_name or '-' }} <span class="text-gray-400">(id: {{ t.agent_id or '-' }})</span>
+          {# Inline relative time next to agent identity #}
+          {% if is_queued and t.enqueued_at %}
+            <span class="ml-3 text-gray-500">enqueued:</span>
+            <span class="text-gray-700 rt-ago" data-ts="{{ t.enqueued_at }}" title="{{ t.enqueued_at }}"></span>
+          {% elif is_running and t.started_at %}
+            <span class="ml-3 text-gray-500">started:</span>
+            <span class="text-gray-700 rt-ago" data-ts="{{ t.started_at }}" title="{{ t.started_at }}"></span>
+          {% elif is_recent and t.finished_at %}
+            <span class="ml-3 text-gray-500">retired:</span>
+            <span class="text-gray-700 rt-ago" data-ts="{{ t.finished_at }}" title="{{ t.finished_at }}"></span>
+            {% if t.started_at %}
+              <span class="ml-3 text-gray-500">ran:</span>
+              <span class="text-gray-700 rt-dur" data-start="{{ t.started_at }}" data-end="{{ t.finished_at }}" title="{{ t.started_at }} → {{ t.finished_at }}"></span>
+            {% endif %}
+          {% endif %}
           {% if is_queued %}
             <span class="ml-3 text-gray-500">prio:</span>
             <span class="font-mono text-xs">{{ t.effective_priority }}</span>

@@ -38,7 +38,7 @@
 
   function updateRelativeTimes() {
     const now = Date.now();
-    document.querySelectorAll('#running-pane .rt, #queued-pane .rt, #recent-pane .rt').forEach(el => {
+    document.querySelectorAll('#running-pane .rt, #queued-pane .rt, #recent-pane .rt, #section-running .rt, #section-queued .rt, #section-recent .rt').forEach(el => {
       const ts = el.getAttribute('data-ts');
       if (!ts) return;
       try {
@@ -55,6 +55,50 @@
         const mm = ('0' + dt.getMinutes()).slice(-2);
         const ss = ('0' + dt.getSeconds()).slice(-2);
         el.textContent = `${y}/${m}/${d} ${hh}:${mm}:${ss} (${rel})`;
+      } catch (_) {}
+    });
+    // Shallow inline "ago" labels next to agent identity
+    document.querySelectorAll('#running-pane .rt-ago, #queued-pane .rt-ago, #recent-pane .rt-ago, #section-running .rt-ago, #section-queued .rt-ago, #section-recent .rt-ago').forEach(el => {
+      const ts = el.getAttribute('data-ts');
+      if (!ts) return;
+      try {
+        const dt = new Date(ts);
+        const diff = Math.max(0, Math.floor((now - dt.getTime()) / 1000));
+        let rel = '';
+        if (diff < 60) {
+          const v = diff;
+          const u = v === 1 ? 'sec' : 'secs';
+          rel = `${v} ${u}`;
+        } else if (diff < 3600) {
+          const v = Math.floor(diff / 60);
+          const u = v === 1 ? 'min' : 'mins';
+          rel = `${v} ${u}`;
+        } else {
+          const v = Math.floor(diff / 3600);
+          const u = v === 1 ? 'hour' : 'hours';
+          rel = `${v} ${u}`;
+        }
+        el.textContent = `${rel} ago`;
+      } catch (_) {}
+    });
+
+    // Durations for recent cards (finished_at - started_at)
+    document.querySelectorAll('#recent-pane .rt-dur, #section-recent .rt-dur').forEach(el => {
+      const s = el.getAttribute('data-start');
+      const e = el.getAttribute('data-end');
+      if (!s || !e) return;
+      try {
+        const st = new Date(s).getTime();
+        const et = new Date(e).getTime();
+        const diff = Math.max(0, Math.floor((et - st) / 1000));
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const sec = diff % 60;
+        let txt = '';
+        if (h > 0) txt = `${h}h ${m}m ${sec}s`;
+        else if (m > 0) txt = `${m}m ${sec}s`;
+        else txt = `${sec}s`;
+        el.textContent = txt;
       } catch (_) {}
     });
   }
@@ -288,4 +332,3 @@
   window.toggleRecentRequests = toggleRecentRequests;
   window.toggleCardRequests = toggleCardRequests;
 })();
-
