@@ -569,16 +569,32 @@ def main():
     parser.add_argument("-y", "--yes", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--giveup", action="store_true")
-    parser.add_argument("--solver", choices=["ctree"], default="ctree")
+    parser.add_argument("--solver", choices=["ctree", "dummy"], default="ctree")
     args = parser.parse_args()
 
     base_url = MINOTAUR_URL if args.target == "minotaur" else LOCAL_URL
-    # Dynamically import solver module
+    # Resolve user-facing solver name to module name
+    solver_name = args.solver
+    if solver_name in ("ctree", "runner_ctree"):
+        module_name = "runner_ctree"
+    elif solver_name in ("dummy", "runner_dummy"):
+        module_name = "runner_dummy"
+    else:
+        module_name = solver_name
+    # Dynamically import solver module (with legacy fallback for ctree)
     try:
-        solver_module = importlib.import_module(args.solver)
+        solver_module = importlib.import_module(module_name)
     except Exception as e:
-        print(f"Error: failed to import solver module '{args.solver}': {e}", file=sys.stderr)
-        sys.exit(2)
+        # Backward-compatibility fallback: allow 'ctree' module if present
+        if module_name == "runner_ctree":
+            try:
+                solver_module = importlib.import_module("ctree")
+            except Exception:
+                print(f"Error: failed to import solver module '{module_name}': {e}", file=sys.stderr)
+                sys.exit(2)
+        else:
+            print(f"Error: failed to import solver module '{module_name}': {e}", file=sys.stderr)
+            sys.exit(2)
     # Agent name default suggested by solver
     if not args.agent_name:
         args.agent_name = getattr(solver_module, "DEFAULT_AGENT_NAME", "anonymous:agent")
