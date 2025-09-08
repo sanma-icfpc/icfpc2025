@@ -41,10 +41,11 @@ Port = Tuple[Room, Door]  # (room, door)
 
 
 class Labyrinth:
-    def __init__(self, labels: List[int], start: Room, to: List[List[Port]]):
+    def __init__(self, labels: List[int], start: Room, to: List[List[Port]], max_steps: int):
         self.labels = labels
         self.start = start
         self.to = to  # to[r][d] = (room, door)
+        self.max_steps = max_steps
 
     def step(self, r: Room, d: Door) -> Room:
         nr, _nd = self.to[r][d]
@@ -61,7 +62,7 @@ class Labyrinth:
         落書きはプラン内のみ有効（永続状態は変更しない）。
         """
         n_rooms = len(self.labels)
-        max_steps = 6 * n_rooms
+        max_steps = self.max_steps
         steps = 0
 
         # プラン内だけ有効な一時ラベル
@@ -148,7 +149,7 @@ def generate_random_labyrinth(n_rooms: int, seed: Optional[int]) -> Labyrinth:
             if to[r][d] == (-1, -1):
                 raise RuntimeError("internal generator error: incomplete port")
 
-    return Labyrinth(labels=labels, start=start, to=to)
+    return Labyrinth(labels=labels, start=start, to=to, max_steps=18*n_rooms)
 
 
 def generate_random_duplicate_labyrinth(n_rooms: int, copies: int, seed: Optional[int]) -> Labyrinth:
@@ -231,7 +232,7 @@ def generate_random_duplicate_labyrinth(n_rooms: int, copies: int, seed: Optiona
             if to[r][d] == (-1, -1):
                 raise RuntimeError("duplicate generator error: incomplete port wiring")
 
-    return Labyrinth(labels=labels, start=start, to=to)
+    return Labyrinth(labels=labels, start=start, to=to, max_steps=6*n_rooms)
 
 
 def equivalent(a: Labyrinth, b: Labyrinth) -> bool:
