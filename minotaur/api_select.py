@@ -137,9 +137,14 @@ def register_select_routes(app, ctx: AppCtx) -> None:
             try:
                 with ctx.conn:
                     running = ctx.conn.execute(
-                        "SELECT id, ticket, agent_name, started_at FROM challenges WHERE status='running' LIMIT 1"
+                        "SELECT id, ticket, agent_name, agent_id, started_at FROM challenges WHERE status='running' LIMIT 1"
                     ).fetchone()
-                    if running is not None and running["agent_name"] and running["agent_name"] == agent_name:
+                    # Auto giveup by Name only (ignore ID) to wipe stale runs on restart
+                    if (
+                        running is not None
+                        and running["agent_name"]
+                        and running["agent_name"] == agent_name
+                    ):
                         ctx.conn.execute(
                             "UPDATE challenges SET status='giveup', finished_at=? WHERE id=? AND status='running'",
                             (utcnow_str(), running["id"]),

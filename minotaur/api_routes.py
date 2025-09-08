@@ -27,7 +27,7 @@ def _log_ch_req(ctx: AppCtx, ch_id: int, api: str, req_key: str, phase: str, sta
         pass
 
 
-def _current_running_session(ctx: AppCtx, agent_name: Optional[str] = None) -> Optional[str]:
+def _current_running_session(ctx: AppCtx, agent_name: Optional[str] = None, agent_id: Optional[str] = None) -> Optional[str]:
     """Return the session_id for the currently running challenge.
 
     If an agent_name is provided (from X-Agent-Name), restrict the lookup to
@@ -35,6 +35,14 @@ def _current_running_session(ctx: AppCtx, agent_name: Optional[str] = None) -> O
     Falls back to global running session when name is not provided for
     backwards compatibility.
     """
+    if agent_name and agent_id:
+        row = ctx.conn.execute(
+            "SELECT session_id FROM challenges WHERE status='running' AND agent_name=? AND agent_id=? LIMIT 1",
+            (agent_name, agent_id),
+        ).fetchone()
+        if row and row["session_id"]:
+            return row["session_id"]
+        return None
     if agent_name:
         row = ctx.conn.execute(
             "SELECT session_id FROM challenges WHERE status='running' AND agent_name=? LIMIT 1",
@@ -62,7 +70,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
         git_sha = request.headers.get("X-Agent-Git") or None
         # Bind explore to the caller's running session to avoid accidental
         # forwarding to a different agent's fresh session after timeout.
-        sid = _current_running_session(ctx, agent_name)
+        sid = _current_running_session(ctx, agent_name, agent_id)
         if not sid:
             return jsonify({"error": "no active session for agent", "agent": agent_name}), 409
         state = {
@@ -110,6 +118,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
         an agent to voluntarily give up its current run without enqueueing another select.
         """
         agent_name = request.headers.get("X-Agent-Name") or None
+        # Giveup by Name only (ignore ID) per design
         if not agent_name:
             return jsonify({"ok": False, "error": "missing_agent_name"}), 400
         now = utcnow_str()
@@ -124,7 +133,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
                 try:
                     ctx.conn.execute(
                         "INSERT INTO challenge_requests(challenge_id, api, req_key, phase, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?,?,?)",
-                        (int(cur["id"]), "event", "cancel", "cancel", 0, "{}", "{}", now),
+                        (int(cur["id"]), "event", "agent_giveup", "agent_giveup", 0, "{}", "{}", now),
                     )
                 except Exception:
                     pass
@@ -153,7 +162,7 @@ def register_api_routes(app, ctx: AppCtx) -> None:
         git_sha = request.headers.get("X-Agent-Git") or None
         # Bind guess to the caller's running session; if their lease expired
         # and another agent was granted, avoid submitting to the wrong session.
-        sid = _current_running_session(ctx, agent_name)
+        sid = _current_running_session(ctx, agent_name, agent_id)
         if not sid:
             return jsonify({"error": "no active session for agent", "agent": agent_name}), 409
         rk = str(uuid.uuid4())

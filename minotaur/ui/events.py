@@ -50,7 +50,7 @@ def create_events_bp(ctx: AppCtx) -> Blueprint:
             if cur is not None:
                 ctx.conn.execute(
                     "INSERT INTO challenge_requests(challenge_id, api, req_key, phase, status_code, req_body, res_body, ts) VALUES(?,?,?,?,?,?,?,?)",
-                    (int(cur["id"]), "event", "cancel", "cancel", 0, "{}", "{}", now),
+                    (int(cur["id"]), "event", "ui_terminate", "ui_terminate", 0, "{}", "{}", now),
                 )
             ctx.conn.execute(
                 "UPDATE challenges SET status='terminated_running', finished_at=? WHERE status='running'",
